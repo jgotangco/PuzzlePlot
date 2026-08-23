@@ -26,20 +26,26 @@ Built with zero external runtime dependencies, PuzzlePlot works instantly across
   - **13×13 Midi**: Themed standard weekly crosswords (*Crossroad Chronicles*, *Kulturang Pinoy*).
   - **21×21 Sunday Jumbo**: Epic sprawling crosswords (*Sunday Galaxy Jumbo*, *Kasaysayan at Bayani*).
 - **Fluid Keyboard & Touch Controls**:
-  - Arrow keys for smooth cursor movement.
-  - Spacebar / Cell Tap to flip between **Across** and **Down**.
-  - Tab / Enter to jump between clues.
+  - <kbd>Arrow Keys</kbd> for smooth cursor movement.
+  - <kbd>Spacebar</kbd> / Cell Tap to flip between **Across** and **Down**.
+  - <kbd>Tab</kbd> / <kbd>Enter</kbd> to jump between clues.
   - On-screen virtual keyboard with `Ñ` for mobile devices.
-- **Smart Assists**: Check Letter/Word/Puzzle, Reveal Letter/Word/Puzzle, Clear Errors / Reset.
+- **Smart Assists**:
+  - *Check*: Letter, Word, or Entire Puzzle.
+  - *Reveal*: Letter, Word, or Full Solution.
+  - *Reset*: Clear Errors or Reset Grid.
 - **Stopwatch & Pause System**: Real-time timer with a blurred pause shield and victory celebration statistics.
 
 ### 🏗️ 2. Crossword Maker Studio
-- **Auto-Builder Word Placer**: Input a custom list of words and let PuzzlePlot automatically compute valid intersections, position words across/down, and lock in symmetrical black blocks.
+- **Auto-Builder Word Placer**: Input a custom list of words (e.g. `BAYANI: Pambansang bayani`) and let PuzzlePlot automatically compute valid intersections, position words across/down, and lock in symmetrical black blocks.
 - **180° Rotational Symmetry**: Real-time symmetry placement standard in professional crossword publications (plus 90°, mirror, and freeform options).
 - **Live Auto-Numbering**: Across and Down numbers and word lengths recalculate in real time as blocks and letters change.
 - **Grid Integrity Validator**: Real-time metrics for block percentage density, word counts, and flood-fill connectivity to prevent isolated letter islands.
-- **Word Assistant & Pattern Search**: Wildcard pattern lookups (e.g. `B??A??` → `BAYANI`, `BUNGA` or `S??AR` → `SOLAR`, `SUGAR`) with one-click insertion.
-- **Save, Export & Print**: Offline local browser storage, standard JSON puzzle file export & import (`.json`), and print-ready publication sheets formatted for A4 / Letter paper with blank numbered grids and clues.
+- **Word Assistant & Pattern Search**: Wildcard pattern lookups (e.g. `B??A??` &rarr; `BAYANI`, `BUNGA` or `S??AR` &rarr; `SOLAR`, `SUGAR`) with one-click insertion.
+- **Save, Export & Print**:
+  - Offline local browser storage.
+  - Standard JSON puzzle file export & import (`.json`).
+  - Print-ready publication sheets formatted for A4 / Letter paper with blank numbered grids and clues.
 
 ### 🎓 3. Construction Mastery Guides
 - **How to Play Guide**: Full navigation reference and tactical solving advice.
@@ -58,7 +64,7 @@ Built with zero external runtime dependencies, PuzzlePlot works instantly across
 ## 🚀 Getting Started
 
 ### Option 1: Open Directly in Browser
-Simply double-click `index.html` in your file explorer. It will open and run in Google Chrome, Microsoft Edge, Mozilla Firefox, or Apple Safari without requiring a local web server.
+Simply double-click [`index.html`](index.html) in your file explorer. It will open and run in Google Chrome, Microsoft Edge, Mozilla Firefox, or Apple Safari without requiring a local web server.
 
 ### Option 2: Run with a Local Web Server
 ```bash
@@ -100,8 +106,8 @@ PuzzlePlot/
 
 ## 📜 Author & Disclaimers
 
-### Author
-Designed and built by **Jerome Gotangco** ([jeromesg@google.com](mailto:jeromesg@google.com)) with [Antigravity](https://antigravity.google/).
+### Author & Development
+Designed and developed by **[Jerome Gotangco](https://github.com/jgotangco)** ([jeromesg@google.com](mailto:jeromesg@google.com) | GitHub: [https://github.com/jgotangco](https://github.com/jgotangco)) with [Antigravity](https://antigravity.google/).
 
 ### Disclaimers
 1. **Affiliation Disclaimer**: This application is a personal work of the author and is **not associated with, endorsed by, or affiliated with [Google](https://about.google/), his past, present, and future employers, or any other party**.
