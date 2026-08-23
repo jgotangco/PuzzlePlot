@@ -361,7 +361,7 @@ class PuzzlePlotApp {
         <div class="footer-inner">
           <div class="footer-left">
             <p><strong>PuzzlePlot</strong> — Crossword Puzzle Game & Maker Studio (v1.0.0)</p>
-            <p class="footer-byline">Designed & Built by Jerome Gotangco (<a href="mailto:jeromesg@google.com" class="about-link">jeromesg@google.com</a>) with <a href="https://antigravity.google/" target="_blank" rel="noopener noreferrer" class="about-link">Antigravity</a>.</p>
+            <p class="footer-byline">Designed & Developed by <a href="https://github.com/jgotangco" target="_blank" rel="noopener noreferrer" class="about-link">Jerome Gotangco</a> (<a href="mailto:jeromesg@google.com" class="about-link">jeromesg@google.com</a>) with <a href="https://antigravity.google/" target="_blank" rel="noopener noreferrer" class="about-link">Antigravity</a>.</p>
           </div>
           <div class="footer-links">
             <button class="footer-link-btn" id="footer-link-about">About & Disclaimers</button>
