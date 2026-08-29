@@ -155,7 +155,7 @@ class PuzzlePlotApp {
     const themeBtn = document.getElementById('theme-toggle-btn');
     if (themeBtn) {
       if (newTheme === 'dark') {
-        themeBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`;
+        themeBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="12" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`;
         themeBtn.title = 'Theme: Dark (Click for Paper)';
       } else if (newTheme === 'paper') {
         themeBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`;
@@ -361,7 +361,7 @@ class PuzzlePlotApp {
         <div class="footer-inner">
           <div class="footer-left">
             <p><strong>PuzzlePlot</strong> — Crossword Puzzle Game & Maker Studio (v1.0.0)</p>
-            <p class="footer-byline">Designed & Developed by <a href="https://github.com/jgotangco" target="_blank" rel="noopener noreferrer" class="about-link">Jerome Gotangco</a> (<a href="mailto:jeromesg@google.com" class="about-link">jeromesg@google.com</a>) with <a href="https://antigravity.google/" target="_blank" rel="noopener noreferrer" class="about-link">Antigravity</a>.</p>
+            <p class="footer-byline">Designed and product-directed by <a href="https://github.com/jgotangco" target="_blank" rel="noopener noreferrer" class="about-link">Jerome Gotangco</a> (<a href="mailto:jeromesg@google.com" class="about-link">jeromesg@google.com</a>). Developed with <a href="https://antigravity.google/" target="_blank" rel="noopener noreferrer" class="about-link">Google Antigravity</a> / <a href="https://gemini.google.com/" target="_blank" rel="noopener noreferrer" class="about-link">Gemini</a>.</p>
           </div>
           <div class="footer-links">
             <button class="footer-link-btn" id="footer-link-about">About & Disclaimers</button>
