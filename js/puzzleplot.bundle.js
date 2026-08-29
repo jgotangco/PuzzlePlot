@@ -1918,7 +1918,7 @@
         const activeClueElem = document.getElementById(clueId);
         if (activeClueElem) {
           activeClueElem.classList.add('clue-item-active');
-          activeClueElem.scrollIntoView({ behavior: 'smooth' block: 'nearest' });
+          activeClueElem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
 
         const badgeElem = document.getElementById('active-clue-badge');
@@ -2499,7 +2499,7 @@
                 PuzzlePlot will automatically calculate intersections, word crossings, and lock in the grid blocks!
               </p>
 
-              <textarea class="textarea-words" id="auto-builder-input" placeholder="BAYANI: Pambansang bayani&#10;SALAMAT: Pagpapahayag ng pasasalamat&#10;KULTURA: Kaugalian at tradisyon&#10;WIKA: Wikang pambansa&#10;ARAW: Liwanag sa maghapon"></textarea>
+              <textarea class="textarea-words" id="auto-builder-input" placeholder="BAYANI: Pambansang bayani&#10;SALAMAT: Pagpapahayag ng pasasalamat&#10;KULTURA: Kaugalian at tradisyon ng lahi&#10;WIKA: Wikang pambansa&#10;ARAW: Liwanag sa maghapon"></textarea>
 
               <div class="samples-row">
                 <span>Quick Samples:</span>
@@ -3712,7 +3712,7 @@
           <div class="footer-inner">
             <div class="footer-left">
               <p><strong>PuzzlePlot</strong> — Crossword Puzzle Game & Maker Studio (v1.0.0)</p>
-              <p class="footer-byline">Designed & Developed by <a href="https://github.com/jgotangco" target="_blank" rel="noopener noreferrer" class="about-link">Jerome Gotangco</a> (<a href="mailto:jeromesg@google.com" class="about-link">jeromesg@google.com</a>) with <a href="https://antigravity.google/" target="_blank" rel="noopener noreferrer" class="about-link">Antigravity</a>.</p>
+              <p class="footer-byline">Designed and product-directed by <a href="https://github.com/jgotangco" target="_blank" rel="noopener noreferrer" class="about-link">Jerome Gotangco</a> (<a href="mailto:jeromesg@google.com" class="about-link">jeromesg@google.com</a>). Developed with <a href="https://antigravity.google/" target="_blank" rel="noopener noreferrer" class="about-link">Google Antigravity</a> / <a href="https://gemini.google.com/" target="_blank" rel="noopener noreferrer" class="about-link">Gemini</a>.</p>
             </div>
             <div class="footer-links">
               <button class="footer-link-btn" id="footer-link-about">About & Disclaimers</button>
