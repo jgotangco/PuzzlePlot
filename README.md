@@ -104,10 +104,10 @@ PuzzlePlot/
 
 ---
 
-## 📜 Author & Disclaimers
+## 📜 Attributions, Credits & Disclaimers
 
-### Author & Development
-Designed and developed by **[Jerome Gotangco](https://github.com/jgotangco)** ([jeromesg@google.com](mailto:jeromesg@google.com) | GitHub: [https://github.com/jgotangco](https://github.com/jgotangco)) with [Antigravity](https://antigravity.google/).
+### Attributions & Credits
+Designed and product-directed by **[Jerome Gotangco](https://github.com/jgotangco)** ([jeromesg@google.com](mailto:jeromesg@google.com) | GitHub: [https://github.com/jgotangco](https://github.com/jgotangco)). Developed with [Google Antigravity](https://antigravity.google/) / [Gemini](https://gemini.google.com/).
 
 ### Disclaimers
 1. **Affiliation Disclaimer**: This application is a personal work of the author and is **not associated with, endorsed by, or affiliated with [Google](https://about.google/), his past, present, and future employers, or any other party**.
