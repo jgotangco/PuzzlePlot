@@ -1,0 +1,20 @@
+{
+  "name": "puzzleplot",
+  "version": "1.0.0",
+  "description": "PuzzlePlot - Premium Crossword Game & Crossword Puzzle Maker (English & Filipino)",
+  "type": "module",
+  "scripts": {
+    "test": "node scripts/validate-presets.js",
+    "validate": "node scripts/validate-presets.js"
+  },
+  "keywords": [
+    "crossword",
+    "puzzle",
+    "filipino",
+    "tagalog",
+    "puzzleplot",
+    "word-game"
+  ],
+  "author": "Jerome Gotangco (jeromesg@google.com)",
+  "license": "MIT"
+}
