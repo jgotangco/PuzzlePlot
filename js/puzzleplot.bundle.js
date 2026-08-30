@@ -1513,9 +1513,10 @@
     }
 
     findFirstCell() {
+      if (!this.puzzle || !this.processedGrid) return;
       for (let r = 0; r < this.puzzle.size; r++) {
         for (let c = 0; c < this.puzzle.size; c++) {
-          if (!this.processedGrid[r][c].isBlock) {
+          if (this.processedGrid[r] && this.processedGrid[r][c] && !this.processedGrid[r][c].isBlock) {
             this.cursor = { row: r, col: c };
             this.direction = this.processedGrid[r][c].acrossClueNumber ? 'across' : 'down';
             return;
@@ -1565,7 +1566,7 @@
     }
 
     saveProgress() {
-      if (!this.puzzle || this.isCompleted) return;
+      if (!this.puzzle || this.isCompleted || typeof localStorage === 'undefined') return;
       try {
         const key = `puzzleplot_progress_${this.puzzle.id}`;
         const data = {
@@ -1580,7 +1581,7 @@
     }
 
     loadSavedProgress() {
-      if (!this.puzzle) return;
+      if (!this.puzzle || typeof localStorage === 'undefined') return;
       try {
         const key = `puzzleplot_progress_${this.puzzle.id}`;
         const saved = localStorage.getItem(key);
@@ -1597,8 +1598,10 @@
     }
 
     clearSavedProgress() {
-      if (!this.puzzle) return;
-      localStorage.removeItem(`puzzleplot_progress_${this.puzzle.id}`);
+      if (!this.puzzle || typeof localStorage === 'undefined') return;
+      try {
+        localStorage.removeItem(`puzzleplot_progress_${this.puzzle.id}`);
+      } catch (e) {}
     }
 
     /**
@@ -1999,7 +2002,7 @@
       const victoryReplay = document.getElementById('victory-btn-replay');
       if (victoryReplay) {
         victoryReplay.addEventListener('click', () => {
-          this.clearEntireGrid();
+          this.clearEntireGrid(true);
           document.getElementById('victory-modal').classList.remove('active');
           this.startTimer();
         });
@@ -2275,6 +2278,7 @@
      * Highlights active cursor, active word, crossing word, and active clue
      */
     updateHighlighting() {
+      if (typeof document === 'undefined') return;
       // 1. Clear previous cell highlights
       document.querySelectorAll('.cell-active-cursor, .cell-active-word, .cell-active-cross').forEach(el => {
         el.classList.remove('cell-active-cursor', 'cell-active-word', 'cell-active-cross');
@@ -2542,7 +2546,13 @@
       this.saveProgress();
     }
 
-    clearEntireGrid() {
+    clearEntireGrid(skipConfirmation = false) {
+      if (!skipConfirmation) {
+        if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+          const confirmed = window.confirm('Are you sure you want to clear the entire puzzle and reset your progress?');
+          if (!confirmed) return false;
+        }
+      }
       const size = this.puzzle.size;
       for (let r = 0; r < size; r++) {
         for (let c = 0; c < size; c++) {
@@ -2558,9 +2568,11 @@
       this.clearSavedProgress();
       this.findFirstCell();
       this.updateHighlighting();
+      return true;
     }
 
     refreshCellDisplay(r, c) {
+      if (typeof document === 'undefined') return;
       const userCell = this.userGrid[r][c];
       const charElem = document.getElementById(`char-${r}-${c}`);
       const cellElem = document.getElementById(`cell-${r}-${c}`);
@@ -4200,7 +4212,7 @@
               <p class="footer-byline">Designed and product-directed by <a href="https://github.com/jgotangco" target="_blank" rel="noopener noreferrer" class="about-link">Jerome Gotangco</a> (<a href="mailto:jeromesg@google.com" class="about-link">jeromesg@google.com</a>). Developed with <a href="https://antigravity.google/" target="_blank" rel="noopener noreferrer" class="about-link">Google Antigravity</a> / <a href="https://gemini.google.com/" target="_blank" rel="noopener noreferrer" class="about-link">Gemini</a>.</p>
             </div>
             <div class="footer-links">
-              <button class="footer-link-btn" id="footer-link-about">About & Disclaimers</button>
+              <button class="footer-link-btn" id="footer-link-about">About PuzzlePlot</button>
               <button class="footer-link-btn" id="footer-link-guide">How to Play & Tips</button>
               <a href="https://github.com/jgotangco/PuzzlePlot" target="_blank" rel="noopener noreferrer" class="footer-link-btn">GitHub</a>
             </div>

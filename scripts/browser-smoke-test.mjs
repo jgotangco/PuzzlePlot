@@ -22,18 +22,15 @@ function findBrowserBinary() {
   const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
 
   const candidatePaths = [
-    // Windows standard locations
     path.join(programFiles, 'Google', 'Chrome', 'Application', 'chrome.exe'),
     path.join(programFilesX86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
     path.join(programFiles, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
     path.join(programFilesX86, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
     path.join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe'),
     path.join(localAppData, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
-    // macOS standard locations
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
     '/Applications/Chromium.app/Contents/MacOS/Chromium',
-    // Linux standard locations
     '/usr/bin/google-chrome',
     '/usr/bin/google-chrome-stable',
     '/usr/bin/chromium',
@@ -46,7 +43,6 @@ function findBrowserBinary() {
     if (p && fs.existsSync(p)) return p;
   }
 
-  // Check system PATH
   const pathCommands = process.platform === 'win32'
     ? ['where chrome', 'where msedge']
     : ['which google-chrome', 'which chromium', 'which google-chrome-stable', 'which msedge'];
@@ -218,7 +214,7 @@ async function run() {
       ws.onerror = reject;
     });
 
-    // 1. Enable Runtime and Page domains BEFORE navigating
+    // 1. Enable Runtime, Page, and Emulation domains BEFORE navigating
     await send('Runtime.enable');
     await send('Page.enable');
 
@@ -286,7 +282,9 @@ async function run() {
       window.print = () => { window.__printed = true; };
     `);
 
+    // -------------------------------------------------------------------------
     // 1. Initial State & DOM Initialization
+    // -------------------------------------------------------------------------
     console.log('--- 1. Checking DOM Initialization & Production Catalog ---');
     const title = diag.documentTitle;
     if (!title.includes('PuzzlePlot')) throw new Error(`Unexpected document title: ${title}`);
@@ -301,7 +299,9 @@ async function run() {
     console.log(`[PASS] Library displays exactly ${cardCount} verified production presets.`);
     passedChecks++;
 
+    // -------------------------------------------------------------------------
     // 2. Play & Solve en-5-1 and fil-5-1
+    // -------------------------------------------------------------------------
     for (const presetId of ['en-5-1', 'fil-5-1']) {
       console.log(`\n--- 2. Real-Browser Play & Solve: ${presetId} ---`);
       await evaluate(`document.querySelector('.btn-play-puzzle[data-id="${presetId}"]').click()`);
@@ -343,8 +343,114 @@ async function run() {
       passedChecks++;
     }
 
-    // 3. Maker Studio Pre-Flight Validation Gates
-    console.log('\n--- 3. Maker Studio Pre-Flight Validation Gates ---');
+    // -------------------------------------------------------------------------
+    // 3. Clear-Progress Confirmation (Cancel vs Confirm vs Play Again)
+    // -------------------------------------------------------------------------
+    console.log('\n--- 3. Clear-Progress Confirmation & Play Again ---');
+    await evaluate(`document.querySelector('.btn-play-puzzle[data-id="en-5-1"]').click()`);
+    await sleep(300);
+
+    // Enter partial solution
+    await evaluate(`
+      (() => {
+        const player = window.PuzzlePlot.player;
+        player.userGrid[0][0].value = 'H';
+        player.userGrid[0][1].value = 'E';
+        player.userGrid[0][2].value = 'A';
+        player.saveProgress();
+        player.refreshCellDisplay(0, 0);
+        player.refreshCellDisplay(0, 1);
+        player.refreshCellDisplay(0, 2);
+      })()
+    `);
+
+    const hasStoredProgressBefore = await evaluate('!!localStorage.getItem("puzzleplot_progress_en-5-1")');
+    if (!hasStoredProgressBefore) throw new Error('Progress was not stored in localStorage.');
+
+    // 3A. Test Cancel Path: window.confirm returns false
+    await evaluate('window.confirm = (msg) => false;');
+    await evaluate(`document.getElementById('act-clear-all').click()`);
+    const cancelValPreserved = await evaluate(`
+      (() => {
+        const player = window.PuzzlePlot.player;
+        const cellVal = player.userGrid[0][0].value;
+        const saved = !!localStorage.getItem("puzzleplot_progress_en-5-1");
+        return { cellVal, saved };
+      })()
+    `);
+    if (cancelValPreserved.cellVal !== 'H' || !cancelValPreserved.saved) {
+      throw new Error('Cancel on Clear Grid failed to preserve user entries or saved progress.');
+    }
+    console.log('[PASS] Cancel on Clear Grid preserves entered letters and saved progress.');
+    passedChecks++;
+
+    // 3B. Test Confirm Path: window.confirm returns true
+    await evaluate('window.confirm = (msg) => true;');
+    await evaluate(`document.getElementById('act-clear-all').click()`);
+    const confirmValCleared = await evaluate(`
+      (() => {
+        const player = window.PuzzlePlot.player;
+        const cellVal = player.userGrid[0][0].value;
+        const saved = localStorage.getItem("puzzleplot_progress_en-5-1");
+        return { cellVal, saved };
+      })()
+    `);
+    if (confirmValCleared.cellVal !== '' || confirmValCleared.saved !== null) {
+      throw new Error('Confirm on Clear Grid failed to clear grid or delete saved progress.');
+    }
+    console.log('[PASS] Confirm on Clear Grid completely clears grid and removes saved progress.');
+    passedChecks++;
+
+    // 3C. Test Play Again: Complete puzzle and click Play Again (must NOT prompt confirmation)
+    await evaluate(`
+      (() => {
+        const player = window.PuzzlePlot.player;
+        for (let r = 0; r < player.puzzle.size; r++) {
+          for (let c = 0; c < player.puzzle.size; c++) {
+            if (!player.processedGrid[r][c].isBlock) {
+              player.userGrid[r][c].value = player.processedGrid[r][c].value;
+            }
+          }
+        }
+        player.checkPuzzleCompletion();
+      })()
+    `);
+    await sleep(200);
+
+    await evaluate(`
+      window.__confirmPromptedForPlayAgain = false;
+      window.confirm = (msg) => { window.__confirmPromptedForPlayAgain = true; return true; };
+      document.getElementById('victory-btn-replay').click();
+    `);
+    await sleep(200);
+
+    const playAgainCheck = await evaluate(`
+      (() => {
+        const player = window.PuzzlePlot.player;
+        return {
+          cellVal: player.userGrid[0][0].value,
+          confirmPrompted: window.__confirmPromptedForPlayAgain,
+          victoryModalActive: document.getElementById('victory-modal').classList.contains('active')
+        };
+      })()
+    `);
+    if (playAgainCheck.confirmPrompted) {
+      throw new Error('Play Again triggered an unnecessary window.confirm popup.');
+    }
+    if (playAgainCheck.cellVal !== '' || playAgainCheck.victoryModalActive) {
+      throw new Error('Play Again failed to restart clean puzzle session.');
+    }
+    console.log('[PASS] Play Again restarts puzzle session without redundant confirmation.');
+    passedChecks++;
+
+    // Return to Hub
+    await evaluate(`document.getElementById('player-back-btn').click()`);
+    await sleep(300);
+
+    // -------------------------------------------------------------------------
+    // 4. Maker Studio Pre-Flight Validation Gates
+    // -------------------------------------------------------------------------
+    console.log('\n--- 4. Maker Studio Pre-Flight Validation Gates ---');
     await evaluate(`document.getElementById('nav-create-btn').click()`);
     await sleep(400);
 
@@ -391,22 +497,52 @@ async function run() {
     console.log('[PASS] Test Play blocked on invalid draft.');
     passedChecks++;
 
-    // 4. Auto-Builder Verification
-    console.log('\n--- 4. Maker Auto-Builder Verification ---');
+    // -------------------------------------------------------------------------
+    // 5. Maker Auto-Builder: Incompatible Rejection & Valid Generation
+    // -------------------------------------------------------------------------
+    console.log('\n--- 5. Maker Auto-Builder Strict Assertion & Valid Generation ---');
+
+    // Capture grid state before incompatible build
+    const gridBeforeIncompatible = await evaluate('JSON.stringify(window.PuzzlePlot.maker.grid)');
+    await evaluate('window.__alerts = [];');
+
     await evaluate(`
       (() => {
         document.getElementById('maker-btn-auto-build').click();
-        document.getElementById('auto-builder-input').value = 'XYZQQW: Random letters\\nJKLMMN: Another random';
+        document.getElementById('auto-builder-input').value = 'ABCDE: Clue A\\nFGHIJ: Clue B';
         document.getElementById('auto-builder-size').value = '5';
         document.getElementById('auto-builder-generate-btn').click();
       })()
     `);
     await sleep(200);
-    console.log('[PASS] Auto-builder rejects incompatible words gracefully.');
+
+    const autoFailAlerts = await evaluate('window.__alerts');
+    const autoFailAlert = autoFailAlerts[autoFailAlerts.length - 1] || '';
+    if (!autoFailAlert.includes('Unable to generate a valid symmetrical crossword')) {
+      throw new Error(`Auto-builder failed to produce expected failure alert for incompatible input: ${autoFailAlert}`);
+    }
+    if (autoFailAlerts.some(a => a.includes('Auto-Grid Successfully Generated'))) {
+      throw new Error('Auto-builder incorrectly produced a success alert for incompatible input.');
+    }
+
+    const gridAfterIncompatible = await evaluate('JSON.stringify(window.PuzzlePlot.maker.grid)');
+    if (gridAfterIncompatible !== gridBeforeIncompatible) {
+      throw new Error('Maker grid was corrupted or modified following a failed auto-generation attempt.');
+    }
+
+    // Modal close and usability check
+    await evaluate(`document.getElementById('auto-builder-close-btn').click()`);
+    await sleep(200);
+    const modalClosed = await evaluate('!document.getElementById("auto-builder-modal").classList.contains("active")');
+    if (!modalClosed) throw new Error('Auto-builder modal failed to close cleanly after rejected generation.');
+    console.log('[PASS] Incompatible auto-builder input asserted: produces error alert, no success alert, leaves grid intact, and modal remains interactive.');
     passedChecks++;
 
+    // Valid auto-builder generation
+    await evaluate('window.__alerts = [];');
     await evaluate(`
       (() => {
+        document.getElementById('maker-btn-auto-build').click();
         document.getElementById('auto-builder-input').value = 'HEART: Center of emotion\\nEMBER: Glowing fragment\\nABUSE: Mishandle\\nRESIN: Sticky substance\\nTREND: Current craze';
         document.getElementById('auto-builder-size').value = '5';
         document.getElementById('auto-builder-generate-btn').click();
@@ -421,43 +557,202 @@ async function run() {
     console.log('[PASS] Auto-builder generated 100% valid 5x5 layout.');
     passedChecks++;
 
-    // 5. Valid Custom Puzzle Workflows
-    console.log('\n--- 5. Valid Custom Puzzle Workflows ---');
+    // -------------------------------------------------------------------------
+    // 6. Real JSON Export/Import Browser Round Trip
+    // -------------------------------------------------------------------------
+    console.log('\n--- 6. Real JSON Export & Import Round Trip ---');
     await evaluate(`
-      window.PuzzlePlot.maker.title = 'My Valid Custom Mini';
+      window.PuzzlePlot.maker.title = 'Export Test Mini';
       window.PuzzlePlot.maker.author = 'Jerome G.';
     `);
 
-    // Valid Print invocation
-    await evaluate('window.__printed = false;');
-    await evaluate(`document.getElementById('maker-act-print').click()`);
-    const printInvoked = await evaluate('window.__printed');
-    if (!printInvoked) throw new Error('window.print was not invoked for valid puzzle.');
-    console.log('[PASS] Print sheet successfully generated and triggered.');
+    // Intercept exported JSON payload
+    await evaluate(`
+      window.__exportedJsonPayload = null;
+      const origCreateObjectURL = URL.createObjectURL;
+      URL.createObjectURL = (blob) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          window.__exportedJsonPayload = reader.result;
+        };
+        reader.readAsText(blob);
+        return origCreateObjectURL(blob);
+      };
+    `);
+
+    await evaluate(`document.getElementById('maker-act-export-json').click()`);
+    await sleep(300);
+
+    const exportedJsonStr = await evaluate('window.__exportedJsonPayload');
+    if (!exportedJsonStr) throw new Error('Export JSON did not generate download Blob payload.');
+
+    const exportedData = JSON.parse(exportedJsonStr);
+    if (
+      exportedData.title !== 'Export Test Mini' ||
+      exportedData.author !== 'Jerome G.' ||
+      exportedData.size !== 5 ||
+      !Array.isArray(exportedData.grid) ||
+      !exportedData.clues?.across?.['1'] ||
+      !exportedData.clues?.down?.['1']
+    ) {
+      throw new Error(`Exported JSON structure is incomplete or malformed: ${JSON.stringify(exportedData)}`);
+    }
+    console.log('[PASS] Real JSON export executed: Blob created and payload structurally verified.');
     passedChecks++;
 
-    // Valid Save to local library
-    await evaluate(`document.getElementById('maker-act-save-local').click()`);
+    // Reset Maker Studio to clean slate
+    await evaluate(`window.PuzzlePlot.startMaker(null)`);
     await sleep(200);
-    const savedCustomsCount = await evaluate('window.PuzzlePlot.customPuzzles.length');
-    if (savedCustomsCount < 1) throw new Error('Custom puzzle was not saved to window.PuzzlePlot.customPuzzles');
-    console.log('[PASS] Valid custom puzzle saved to local library.');
+
+    // Import exported JSON back via Maker Studio real File & FileReader import path
+    await evaluate('window.__alerts = [];');
+    await evaluate(`
+      (() => {
+        const payload = window.__exportedJsonPayload;
+        const testFile = new File([payload], 'exported_puzzle.json', { type: 'application/json' });
+        const fileInput = document.getElementById('maker-file-importer');
+        if (fileInput && typeof DataTransfer !== 'undefined') {
+          try {
+            const dt = new DataTransfer();
+            dt.items.add(testFile);
+            fileInput.files = dt.files;
+            fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+            return;
+          } catch (e) {}
+        }
+        // Direct event dispatch through handler with authentic File object
+        window.PuzzlePlot.maker.handleFileImport({ target: { files: [testFile] } });
+      })()
+    `);
+
+    // Wait for FileReader asynchronous completion and success alert
+    let importSuccess = false;
+    const startImportWait = Date.now();
+    while (Date.now() - startImportWait < 4000) {
+      const alerts = await evaluate('window.__alerts');
+      if (alerts.some(a => a.includes('Puzzle successfully loaded into PuzzlePlot Studio'))) {
+        importSuccess = true;
+        break;
+      }
+      await sleep(100);
+    }
+
+    if (!importSuccess) {
+      const lastAlerts = await evaluate('window.__alerts');
+      throw new Error(`File/FileReader import did not report success. Alerts: ${JSON.stringify(lastAlerts)}`);
+    }
+
+    const importedMakerState = await evaluate(`
+      (() => {
+        const maker = window.PuzzlePlot.maker;
+        return {
+          title: maker.title,
+          author: maker.author,
+          language: maker.language,
+          difficulty: maker.difficulty,
+          size: maker.size,
+          gridLetters: maker.grid.map(row => row.map(c => c.value).join('')),
+          hasCluesAcross: Object.keys(maker.clues.across).length,
+          hasCluesDown: Object.keys(maker.clues.down).length,
+          acrossClue1: maker.clues.across['1'],
+          downClue1: maker.clues.down['1']
+        };
+      })()
+    `);
+
+    if (
+      importedMakerState.title !== 'Export Test Mini' ||
+      importedMakerState.author !== 'Jerome G.' ||
+      importedMakerState.language !== 'en' ||
+      importedMakerState.size !== 5 ||
+      importedMakerState.gridLetters[0] !== 'HEART' ||
+      importedMakerState.gridLetters[1] !== 'EMBER' ||
+      importedMakerState.gridLetters[2] !== 'ABUSE' ||
+      importedMakerState.gridLetters[3] !== 'RESIN' ||
+      importedMakerState.gridLetters[4] !== 'TREND' ||
+      importedMakerState.hasCluesAcross < 5 ||
+      importedMakerState.hasCluesDown < 5 ||
+      !importedMakerState.acrossClue1 ||
+      !importedMakerState.downClue1
+    ) {
+      throw new Error(`Imported puzzle in Maker Studio did not match exported data: ${JSON.stringify(importedMakerState)}`);
+    }
+    console.log('[PASS] Exported JSON imported back through File/FileReader path without data loss.');
     passedChecks++;
 
-    // Valid Test Play
+    // Test Play and solve the imported puzzle
     await evaluate(`document.getElementById('maker-test-play-btn').click()`);
     await sleep(300);
-    const isTestingActive = await evaluate('document.getElementById("player-view").classList.contains("active")');
-    if (!isTestingActive) throw new Error('Test Play did not transition to Player view.');
-    console.log('[PASS] Test Play loaded valid custom puzzle into Player.');
+
+    const importedPlayResult = await evaluate(`
+      (() => {
+        const player = window.PuzzlePlot.player;
+        if (!player) return { error: 'No player' };
+        for (let r = 0; r < player.puzzle.size; r++) {
+          for (let c = 0; c < player.puzzle.size; c++) {
+            if (!player.processedGrid[r][c].isBlock) {
+              player.userGrid[r][c].value = player.processedGrid[r][c].value;
+            }
+          }
+        }
+        player.checkPuzzleCompletion();
+        const victoryActive = document.getElementById('victory-modal')?.classList.contains('active');
+        return { isCompleted: player.isCompleted, victoryActive };
+      })()
+    `);
+
+    if (!importedPlayResult.isCompleted || !importedPlayResult.victoryActive) {
+      throw new Error('Test Play of imported puzzle failed to complete successfully.');
+    }
+    console.log('[PASS] Imported puzzle test-played and solved with full victory modal confirmation.');
     passedChecks++;
 
-    // Return to Hub
-    await evaluate(`document.getElementById('player-back-btn').click()`);
+    // Return to Library Hub
+    await evaluate(`document.getElementById('victory-btn-library').click()`);
     await sleep(300);
 
-    // 6. Malformed Local Storage Recovery & Hostile Metadata XSS Hardening
-    console.log('\n--- 6. Storage Resilience & DOM Injection Hardening ---');
+    // -------------------------------------------------------------------------
+    // 7. Responsive Viewport & Zoom Usability Checks
+    // -------------------------------------------------------------------------
+    console.log('\n--- 7. Viewport Zoom & Responsive Scale Verification ---');
+
+    // Test Mobile viewport (375x667)
+    await send('Emulation.setDeviceMetricsOverride', {
+      width: 375,
+      height: 667,
+      deviceScaleFactor: 2,
+      mobile: true
+    });
+    await sleep(200);
+
+    const mobileUsable = await evaluate(`
+      (() => {
+        const playBtn = document.getElementById('hero-btn-play');
+        const createBtn = document.getElementById('hero-btn-create');
+        const cards = document.querySelectorAll('.puzzle-card');
+        const rect = playBtn?.getBoundingClientRect();
+        return {
+          playVisible: !!playBtn && rect.width > 0 && rect.height > 0,
+          createVisible: !!createBtn,
+          cardCount: cards.length,
+          bodyOverflowX: document.documentElement.scrollWidth <= window.innerWidth + 10
+        };
+      })()
+    `);
+    if (!mobileUsable.playVisible || mobileUsable.cardCount !== 2) {
+      throw new Error(`Mobile viewport rendering issue: ${JSON.stringify(mobileUsable)}`);
+    }
+    console.log('[PASS] Mobile viewport (375x667): Hub and primary controls fully accessible.');
+    passedChecks++;
+
+    // Reset Emulation
+    await send('Emulation.clearDeviceMetricsOverride');
+    await sleep(200);
+
+    // -------------------------------------------------------------------------
+    // 8. Storage Resilience & DOM Injection Hardening
+    // -------------------------------------------------------------------------
+    console.log('\n--- 8. Storage Resilience & DOM Injection Hardening ---');
     await evaluate(`
       (() => {
         const corruptedData = [
@@ -504,8 +799,10 @@ async function run() {
     console.log('[PASS] Hostile catalog metadata rendered as inert text without script/element injection.');
     passedChecks++;
 
-    // 7. Check Console Errors & Exceptions
-    console.log('\n--- 7. Real-Browser Console & Exception Health Check ---');
+    // -------------------------------------------------------------------------
+    // 9. Check Console Errors & Exceptions
+    // -------------------------------------------------------------------------
+    console.log('\n--- 9. Real-Browser Console & Exception Health Check ---');
     if (consoleErrors.length > 0) {
       console.error(`[FAIL] ${consoleErrors.length} console errors / runtime exceptions logged:`);
       consoleErrors.forEach(e => console.error(`  - ${e}`));

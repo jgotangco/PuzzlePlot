@@ -2,7 +2,7 @@
 <html lang="en" data-theme="paper">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PuzzlePlot - Crossword Puzzle Game & Maker (v1.0.0)</title>
   <meta name="description" content="PuzzlePlot is an editorial crossword puzzle game and crossword maker for 5x5, 13x13, and 21x21 grids in English and Filipino. Designed and product-directed by Jerome Gotangco. Developed with Google Antigravity / Gemini.">
   <meta name="author" content="Jerome Gotangco (https://github.com/jgotangco)">
@@ -55,7 +55,7 @@
   <!-- View 3: Crossword Maker Studio View -->
   <div class="view-container" id="maker-view"></div>
 
-  <!-- Modal 1: About & Disclaimers Modal -->
+  <!-- Modal 1: About Modal -->
   <div class="modal-backdrop" id="about-modal">
     <div class="modal-card about-card animate-pop">
       <div class="modal-header-row">
@@ -84,16 +84,10 @@
           </p>
         </div>
 
-        <div class="disclaimer-card">
-          <h4>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            Important Disclaimers
-          </h4>
+        <div class="about-author-box">
+          <h4>Puzzle Library & Maker Studio Availability</h4>
           <p>
-            This application is a <strong>personal work of the author</strong> and is <strong>not associated with, endorsed by, or affiliated with <a href="https://about.google/" target="_blank" rel="noopener noreferrer" class="about-link">Google</a>, his past, present, and future employers, or any other party</strong>.
-          </p>
-          <p>
-            This application is for <strong>demonstration and personal use only</strong>. <strong>No warranties or guarantees of any kind, express or implied, are provided regarding financial accuracy, continuous availability, or fitness for any purpose.</strong>
+            The built-in Puzzle Library currently includes two verified 5×5 Mini crosswords (English and Filipino). Maker Studio fully supports authoring and auto-building 5×5, 13×13, and 21×21 crossword grids. Four larger draft presets (13×13 and 21×21) remain quarantined in <code>js/data/draft-presets.js</code> and are excluded from the production library until authentic clue dictionaries are curated.
           </p>
         </div>
 

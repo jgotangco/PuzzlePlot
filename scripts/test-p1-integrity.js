@@ -333,6 +333,65 @@ assert(!renderedCardHtml.includes('evil.html'), 'Hostile difficulty markup is no
 // Verify quotes cannot break out of data-id attribute
 assert(!renderedCardHtml.includes('data-id="xss" onmouseover='), 'Quotes cannot break out of data-* attributes');
 
+
+// -----------------------------------------------------------------------------
+// 9. Clear-Progress Confirmation & Play Again (P2)
+// -----------------------------------------------------------------------------
+console.log('\n--- 9. Testing Clear-Progress Confirmation & Play Again ---');
+
+const mockContainer = {
+  id: 'player-view',
+  tagName: 'DIV',
+  innerHTML: '',
+  textContent: '',
+  classList: { add() {}, remove() {}, contains() { return false; }, toggle() {} },
+  appendChild() {},
+  querySelectorAll() { return []; },
+  querySelector() { return null; },
+  addEventListener() {},
+  removeEventListener() {}
+};
+
+const testPlayerInstance = new CrosswordPlayer({ container: mockContainer });
+const puzzle = PresetPuzzles.find(p => p.id === 'en-5-1');
+const rawGrid = CrosswordUtils.createEmptyGrid(5, 5);
+for (let r = 0; r < 5; r++) {
+  for (let c = 0; c < 5; c++) {
+    rawGrid[r][c].value = puzzle.grid[r][c];
+  }
+}
+const { grid } = CrosswordUtils.computeNumbersAndWords(rawGrid);
+testPlayerInstance.puzzle = puzzle;
+testPlayerInstance.processedGrid = grid;
+testPlayerInstance.userGrid = Array.from({ length: 5 }, () => Array.from({ length: 5 }, () => ({ value: '', isRevealed: false, isError: false, isChecked: false })));
+testPlayerInstance.userGrid[0][0].value = 'H';
+
+// Test Cancel path: confirm returns false -> grid remains unchanged, returns false
+globalThis.window = globalThis.window || {};
+let confirmPrompted = false;
+globalThis.window.confirm = (msg) => { confirmPrompted = true; return false; };
+
+const cancelResult = testPlayerInstance.clearEntireGrid(false);
+assert(confirmPrompted === true, 'clearEntireGrid(false) prompts window.confirm');
+assert(cancelResult === false, 'clearEntireGrid(false) returns false on user Cancel');
+assert(testPlayerInstance.userGrid[0][0].value === 'H', 'User grid values preserved on Cancel');
+
+// Test Confirm path: confirm returns true -> grid cleared, returns true
+confirmPrompted = false;
+globalThis.window.confirm = (msg) => { confirmPrompted = true; return true; };
+const confirmResult = testPlayerInstance.clearEntireGrid(false);
+assert(confirmPrompted === true, 'clearEntireGrid(false) prompts window.confirm on Confirm path');
+assert(confirmResult === true, 'clearEntireGrid(false) returns true on user Confirm');
+assert(testPlayerInstance.userGrid[0][0].value === '', 'User grid cleared on Confirm');
+
+// Test Play Again path: skipConfirmation = true -> does NOT call confirm
+confirmPrompted = false;
+testPlayerInstance.userGrid[0][0].value = 'H';
+const playAgainResult = testPlayerInstance.clearEntireGrid(true);
+assert(confirmPrompted === false, 'clearEntireGrid(true) does NOT prompt window.confirm for Play Again');
+assert(playAgainResult === true, 'clearEntireGrid(true) returns true');
+assert(testPlayerInstance.userGrid[0][0].value === '', 'User grid cleared for Play Again');
+
 console.log('\n------------------------------------------------------------');
 console.log(`Summary: ${passCount} Checks Passed, ${failCount} Failed`);
 console.log('------------------------------------------------------------\n');

@@ -383,7 +383,7 @@ class PuzzlePlotApp {
             <p class="footer-byline">Designed and product-directed by <a href="https://github.com/jgotangco" target="_blank" rel="noopener noreferrer" class="about-link">Jerome Gotangco</a> (<a href="mailto:jeromesg@google.com" class="about-link">jeromesg@google.com</a>). Developed with <a href="https://antigravity.google/" target="_blank" rel="noopener noreferrer" class="about-link">Google Antigravity</a> / <a href="https://gemini.google.com/" target="_blank" rel="noopener noreferrer" class="about-link">Gemini</a>.</p>
           </div>
           <div class="footer-links">
-            <button class="footer-link-btn" id="footer-link-about">About & Disclaimers</button>
+            <button class="footer-link-btn" id="footer-link-about">About PuzzlePlot</button>
             <button class="footer-link-btn" id="footer-link-guide">How to Play & Tips</button>
             <a href="https://github.com/jgotangco/PuzzlePlot" target="_blank" rel="noopener noreferrer" class="footer-link-btn">GitHub</a>
           </div>

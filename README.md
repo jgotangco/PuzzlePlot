@@ -24,7 +24,7 @@ Built with zero external runtime dependencies, PuzzlePlot works instantly across
 - **Verified Production Presets**:
   - **5×5 Mini (English)**: *Daily Mini: Hearth & Trend* — A swift 5×5 word square with verified dictionary entries.
   - **5×5 Mini (Filipino)**: *Munting Palaisipan* — A classic 5×5 word square featuring authentic Filipino vocabulary.
-  - *(Note: 13×13 Midi and 21×21 Jumbo preset puzzles are currently quarantined in `js/data/draft-presets.js` undergoing human vocabulary curation and clue accuracy review before release.)*
+  - *(Note: The built-in production library currently contains two verified 5×5 puzzles. 13×13 and 21×21 remain supported Maker Studio creation sizes, while the four larger draft presets remain quarantined in `js/data/draft-presets.js` and are excluded from production until authentic clue dictionaries are curated.)*
 - **Fluid Keyboard & Touch Controls**:
   - <kbd>Arrow Keys</kbd> for smooth cursor movement.
   - <kbd>Spacebar</kbd> / Cell Tap to flip between **Across** and **Down**.
