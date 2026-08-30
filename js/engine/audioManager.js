@@ -3,15 +3,15 @@
  * Procedural sound generator using Web Audio API. Zero external audio file dependencies.
  */
 
-class AudioManager {
+class AudioManagerClass {
   constructor() {
     this.audioCtx = null;
-    this.isMuted = localStorage.getItem('puzzleplot_sound_muted') === 'true';
+    this.isMuted = typeof localStorage !== 'undefined' ? (localStorage.getItem('puzzleplot_sound_muted') === 'true') : false;
   }
 
   init() {
     if (!this.audioCtx) {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      const AudioContext = (typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext));
       if (AudioContext) {
         this.audioCtx = new AudioContext();
       }
@@ -23,7 +23,9 @@ class AudioManager {
 
   toggleMute() {
     this.isMuted = !this.isMuted;
-    localStorage.setItem('puzzleplot_sound_muted', this.isMuted.toString());
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('puzzleplot_sound_muted', this.isMuted.toString());
+    }
     return this.isMuted;
   }
 
@@ -129,4 +131,6 @@ class AudioManager {
   }
 }
 
-export const SoundEngine = new AudioManager();
+export const SoundEngine = new AudioManagerClass();
+export const AudioManager = SoundEngine;
+export { AudioManagerClass };

@@ -57,7 +57,7 @@ let bundleContent = '';
 
 try {
   bundleContent = fs.readFileSync(bundlePath, 'utf8');
-  const sectionPattern = /\/\/\s*4\.\s*BUILT-IN PRESET PUZZLES[^\r\n]*\r?\n\s*\/\/\s*={10,}\r?\n\s*const PresetPuzzles = ([\s\S]*?);\r?\n\s*\/\/\s*={10,}\r?\n\s*\/\/\s*5\.\s*CROSSWORD PLAYER ENGINE/;
+  const sectionPattern = /\/\/\s*4\.\s*BUILT-IN PRESET PUZZLES[\s\S]*?const PresetPuzzles = ([\s\S]*?);\r?\n\s*\/\/\s*={10,}\r?\n\s*\/\/\s*5\.\s*CROSSWORD PLAYER ENGINE/;
   const match = bundleContent.match(sectionPattern);
   if (!match) {
     throw new Error('Could not locate Section 4 (PresetPuzzles) in bundle file.');

@@ -4,7 +4,7 @@
  */
 
 import { CrosswordUtils } from '../engine/crosswordUtils.js';
-import { AudioManager } from '../engine/audioManager.js';
+import { SoundEngine } from '../engine/audioManager.js';
 import { DictionarySearch } from '../data/dictionaries.js';
 
 export class CrosswordMaker {
@@ -144,6 +144,24 @@ export class CrosswordMaker {
       const select = document.getElementById('maker-size-select');
       if (select) select.value = this.size.toString();
     }
+  }
+
+  validateForAction(actionName) {
+    const puzzle = this.getPuzzleObject();
+    const res = CrosswordUtils.validatePuzzleIntegrity(puzzle, {
+      requiredSymmetry: this.symmetry !== 'none' ? this.symmetry : undefined,
+      checkClues: true,
+      allowIncompleteLetters: false
+    });
+
+    if (!res.isValid) {
+      const errorDetails = res.errors.map((e, idx) => `${idx + 1}. ${e.message}`).join('\n');
+      const msg = `Cannot ${actionName} puzzle due to the following validation errors:\n\n${errorDetails}\n\nPlease resolve these issues before ${actionName.toLowerCase()}ing.`;
+      SoundEngine.playErrorSound();
+      alert(msg);
+      return false;
+    }
+    return true;
   }
 
   recomputeGrid() {
@@ -588,6 +606,7 @@ export class CrosswordMaker {
     const btnTestPlay = document.getElementById('maker-test-play-btn');
     if (btnTestPlay) {
       btnTestPlay.addEventListener('click', () => {
+        if (!this.validateForAction('Test Play')) return;
         const puzzleData = this.getPuzzleObject();
         this.onTestPlay(puzzleData);
       });
@@ -598,6 +617,7 @@ export class CrosswordMaker {
     const actSaveLocal = document.getElementById('maker-act-save-local');
     if (actSaveLocal) {
       actSaveLocal.addEventListener('click', () => {
+        if (!this.validateForAction('Save')) return;
         const puzzle = this.getPuzzleObject();
         this.onSave(puzzle);
       });
@@ -605,7 +625,10 @@ export class CrosswordMaker {
 
     const actExportJson = document.getElementById('maker-act-export-json');
     if (actExportJson) {
-      actExportJson.addEventListener('click', () => this.exportPuzzleJSON());
+      actExportJson.addEventListener('click', () => {
+        if (!this.validateForAction('Export')) return;
+        this.exportPuzzleJSON();
+      });
     }
 
     const actImportJson = document.getElementById('maker-act-import-json');
@@ -617,7 +640,10 @@ export class CrosswordMaker {
 
     const actPrint = document.getElementById('maker-act-print');
     if (actPrint) {
-      actPrint.addEventListener('click', () => this.generatePrintableSheet());
+      actPrint.addEventListener('click', () => {
+        if (!this.validateForAction('Print')) return;
+        this.generatePrintableSheet();
+      });
     }
 
     const gridContainer = document.getElementById('maker-grid-container');
@@ -690,8 +716,8 @@ export class CrosswordMaker {
           this.attachEventListeners();
 
           closeAutoModal();
-          AudioManager.playVictorySound();
-          alert(`Auto-Grid Successfully Generated! Placed ${result.placedCount} words in a ${targetSize}x${targetSize} layout with grid blocks.`);
+          SoundEngine.playVictorySound();
+          alert(`Auto-Grid Successfully Generated! Placed ${result.placedCount} words in a valid ${targetSize}x${targetSize} layout.`);
         } catch (err) {
           alert(err.message);
         }
@@ -840,7 +866,7 @@ export class CrosswordMaker {
       this.renderGridOnly();
       this.renderCluesOnly();
       this.updateMetrics();
-      AudioManager.playKeySound();
+      SoundEngine.playKeySound();
     } else {
       if (this.grid[r][c].isBlock) return;
 
@@ -924,7 +950,7 @@ export class CrosswordMaker {
     const charElem = document.getElementById(`maker-char-${row}-${col}`);
     if (charElem) charElem.textContent = letter;
 
-    AudioManager.playKeySound();
+    SoundEngine.playKeySound();
     this.saveStateToHistory();
     this.recomputeGrid();
     this.renderCluesOnly();
@@ -941,7 +967,7 @@ export class CrosswordMaker {
       this.grid[row][col].value = '';
       const charElem = document.getElementById(`maker-char-${row}-${col}`);
       if (charElem) charElem.textContent = '';
-      AudioManager.playKeySound();
+      SoundEngine.playKeySound();
       this.saveStateToHistory();
       this.recomputeGrid();
       this.renderCluesOnly();
@@ -953,7 +979,7 @@ export class CrosswordMaker {
       this.grid[nr][nc].value = '';
       const charElem = document.getElementById(`maker-char-${nr}-${nc}`);
       if (charElem) charElem.textContent = '';
-      AudioManager.playKeySound();
+      SoundEngine.playKeySound();
       this.saveStateToHistory();
       this.recomputeGrid();
       this.renderCluesOnly();
@@ -1061,7 +1087,7 @@ export class CrosswordMaker {
     this.renderGridOnly();
     this.renderCluesOnly();
     this.updateMetrics();
-    AudioManager.playWordCompleteSound();
+    SoundEngine.playWordCompleteSound();
   }
 
   getPuzzleObject() {
@@ -1100,13 +1126,21 @@ export class CrosswordMaker {
     const file = e.target.files[0];
     if (!file) return;
 
+    if (file.size > 1024 * 1024) {
+      SoundEngine.playErrorSound();
+      alert('Selected puzzle file is too large (maximum allowed size is 1MB).');
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
         const imported = CrosswordUtils.importFromJSON(evt.target.result);
         this.init(imported);
+        SoundEngine.playVictorySound();
         alert('Puzzle successfully loaded into PuzzlePlot Studio!');
       } catch (err) {
+        SoundEngine.playErrorSound();
         alert(err.message);
       }
     };
@@ -1173,8 +1207,13 @@ export class CrosswordMaker {
   }
 
   escapeHtml(str) {
-    if (!str) return '';
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    if (str == null) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   destroy() {

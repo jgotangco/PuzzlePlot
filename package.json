@@ -4,11 +4,14 @@
   "description": "PuzzlePlot - Premium Crossword Game & Crossword Puzzle Maker (English & Filipino)",
   "type": "module",
   "scripts": {
-    "test": "node scripts/validate-presets.js && node scripts/browser-smoke-test.mjs",
-    "test:unit": "node scripts/validate-presets.js",
+    "build": "node scripts/build-bundle.js",
+    "check:bundle": "node scripts/check-bundle-consistency.js",
+    "sync": "node scripts/sync-presets-to-bundle.js",
+    "test:deterministic": "node scripts/test-p1-integrity.js && node scripts/validate-presets.js",
+    "test:unit": "node scripts/test-p1-integrity.js",
+    "test:presets": "node scripts/validate-presets.js",
     "test:browser": "node scripts/browser-smoke-test.mjs",
-    "validate": "node scripts/validate-presets.js",
-    "sync": "node scripts/sync-presets-to-bundle.js"
+    "test": "node scripts/test-p1-integrity.js && node scripts/validate-presets.js && node scripts/browser-smoke-test.mjs"
   },
   "keywords": [
     "crossword",

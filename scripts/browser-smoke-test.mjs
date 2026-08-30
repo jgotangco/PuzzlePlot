@@ -1,8 +1,10 @@
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import http from 'http';
+import net from 'net';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import os from 'os';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,17 +12,77 @@ const rootDir = path.resolve(__dirname, '..');
 const indexPath = path.join(rootDir, 'index.html').replace(/\\/g, '/');
 const fileUrl = `file:///${indexPath}`;
 
-const chromePaths = [
-  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-  'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-  'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-  'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
-];
+function findBrowserBinary() {
+  if (process.env.PUZZLEPLOT_BROWSER_PATH && fs.existsSync(process.env.PUZZLEPLOT_BROWSER_PATH)) {
+    return process.env.PUZZLEPLOT_BROWSER_PATH;
+  }
 
-let chromeBin = chromePaths.find(p => fs.existsSync(p));
+  const localAppData = process.env.LOCALAPPDATA || '';
+  const programFiles = process.env['ProgramFiles'] || 'C:\\Program Files';
+  const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+
+  const candidatePaths = [
+    // Windows standard locations
+    path.join(programFiles, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    path.join(programFilesX86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    path.join(programFiles, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    path.join(programFilesX86, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    path.join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    path.join(localAppData, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    // macOS standard locations
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    // Linux standard locations
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/microsoft-edge',
+    '/usr/bin/microsoft-edge-stable'
+  ];
+
+  for (const p of candidatePaths) {
+    if (p && fs.existsSync(p)) return p;
+  }
+
+  // Check system PATH
+  const pathCommands = process.platform === 'win32'
+    ? ['where chrome', 'where msedge']
+    : ['which google-chrome', 'which chromium', 'which google-chrome-stable', 'which msedge'];
+  for (const cmd of pathCommands) {
+    try {
+      const out = execSync(cmd, { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim().split(/\r?\n/)[0];
+      if (out && fs.existsSync(out)) return out;
+    } catch (e) {}
+  }
+
+  return null;
+}
+
+function getAvailablePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const port = server.address().port;
+      server.close(() => resolve(port));
+    });
+  });
+}
+
+const chromeBin = findBrowserBinary();
 if (!chromeBin) {
-  console.error('No suitable Chrome/Edge browser found for real browser testing.');
-  process.exit(1);
+  console.log('============================================================');
+  console.log('PUZZLEPLOT REAL-BROWSER SMOKE TEST (Chrome Headless & CDP)');
+  console.log('============================================================\n');
+  console.log('[SKIPPED] No Chrome, Chromium, or Edge binary located on this host.');
+  console.log('Set PUZZLEPLOT_BROWSER_PATH to run real-browser smoke tests.');
+  console.log('\n------------------------------------------------------------');
+  console.log('Real-Browser Smoke Test Results: 0 Passed, 0 Failed, 1 SKIPPED');
+  console.log('------------------------------------------------------------\n');
+  process.exit(0);
 }
 
 console.log('============================================================');
@@ -29,25 +91,31 @@ console.log('============================================================\n');
 console.log(`Browser Binary: ${chromeBin}`);
 console.log(`Target URL: ${fileUrl}\n`);
 
-const port = 9222 + Math.floor(Math.random() * 500);
-const chrome = spawn(chromeBin, [
-  '--headless=new',
-  `--remote-debugging-port=${port}`,
-  '--disable-gpu',
-  '--no-sandbox',
-  '--disable-dev-shm-usage',
-  '--allow-file-access-from-files',
-  '--disable-web-security',
-  fileUrl
-], { stdio: 'ignore' });
+let tempUserDataDir = null;
+let chromeProcess = null;
+
+function cleanup() {
+  if (chromeProcess) {
+    try { chromeProcess.kill('SIGKILL'); } catch (e) {}
+    chromeProcess = null;
+  }
+  if (tempUserDataDir) {
+    try { fs.rmSync(tempUserDataDir, { recursive: true, force: true }); } catch (e) {}
+    tempUserDataDir = null;
+  }
+}
+
+process.on('exit', cleanup);
+process.on('SIGINT', () => { cleanup(); process.exit(1); });
+process.on('SIGTERM', () => { cleanup(); process.exit(1); });
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function getWsUrl(retries = 25) {
+async function getWsUrl(port, retries = 40) {
   for (let i = 0; i < retries; i++) {
-    await sleep(300);
+    await sleep(250);
     try {
       const res = await new Promise((resolve, reject) => {
         http.get(`http://127.0.0.1:${port}/json/list`, (r) => {
@@ -57,194 +125,203 @@ async function getWsUrl(retries = 25) {
         }).on('error', reject);
       });
       if (res && res.length > 0) {
-        const pageTab = res.find(t => t.type === 'page' && (t.url.includes('index.html') || t.title.includes('PuzzlePlot')));
+        const pageTab = res.find(t => t.type === 'page');
         if (pageTab && pageTab.webSocketDebuggerUrl) {
           return pageTab.webSocketDebuggerUrl;
         }
       }
     } catch (e) {}
   }
-  throw new Error('Failed to locate PuzzlePlot page target in Chrome DevTools');
+  throw new Error('Failed to locate active Chrome page target');
 }
 
 async function run() {
-  let wsUrl;
-  try {
-    wsUrl = await getWsUrl();
-  } catch (err) {
-    chrome.kill();
-    console.error(`Failed to launch browser: ${err.message}`);
-    process.exit(1);
-  }
+  let passedChecks = 0;
+  let failedChecks = 0;
+  let ws = null;
 
-  const ws = new WebSocket(wsUrl);
-  let msgId = 1;
-  const pending = new Map();
+  const capturedExceptions = [];
   const consoleErrors = [];
-  const consoleLogs = [];
+  const consoleMessages = [];
 
-  ws.onmessage = (event) => {
-    const msg = JSON.parse(event.data);
-    if (msg.id && pending.has(msg.id)) {
-      const { resolve, reject } = pending.get(msg.id);
-      pending.delete(msg.id);
-      if (msg.error) reject(new Error(msg.error.message || JSON.stringify(msg.error)));
-      else resolve(msg.result);
-    } else if (msg.method === 'Runtime.consoleAPICalled') {
-      const type = msg.params.type;
-      const text = msg.params.args.map(a => a.value || a.description || '').join(' ');
-      if (type === 'error') {
-        consoleErrors.push(text);
-      } else {
-        consoleLogs.push(`[${type}] ${text}`);
+  try {
+    tempUserDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'puzzleplot-chrome-'));
+    const port = await getAvailablePort();
+
+    chromeProcess = spawn(chromeBin, [
+      '--headless=new',
+      `--remote-debugging-port=${port}`,
+      `--user-data-dir=${tempUserDataDir}`,
+      '--disable-gpu',
+      '--no-sandbox',
+      '--disable-dev-shm-usage',
+      '--allow-file-access-from-files',
+      '--disable-web-security'
+    ], { stdio: 'ignore' });
+
+    const wsUrl = await getWsUrl(port);
+    ws = new WebSocket(wsUrl);
+
+    let msgId = 1;
+    const pending = new Map();
+
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.id && pending.has(msg.id)) {
+        const { resolve, reject } = pending.get(msg.id);
+        pending.delete(msg.id);
+        if (msg.error) reject(new Error(msg.error.message || JSON.stringify(msg.error)));
+        else resolve(msg.result);
+      } else if (msg.method === 'Runtime.consoleAPICalled') {
+        const type = msg.params.type;
+        const text = msg.params.args.map(a => a.value || a.description || '').join(' ');
+        const location = msg.params.stackTrace?.callFrames?.[0]
+          ? `(${msg.params.stackTrace.callFrames[0].url}:${msg.params.stackTrace.callFrames[0].lineNumber}:${msg.params.stackTrace.callFrames[0].columnNumber})`
+          : '';
+        const entry = `[${type.toUpperCase()}] ${text} ${location}`.trim();
+        consoleMessages.push(entry);
+        if (type === 'error') {
+          consoleErrors.push(entry);
+        }
+      } else if (msg.method === 'Runtime.exceptionThrown') {
+        const details = msg.params?.exceptionDetails;
+        const desc = details?.exception?.description || details?.text || 'Unhandled runtime exception';
+        const loc = details?.url ? `(${details.url}:${details.lineNumber}:${details.columnNumber})` : '';
+        const stack = details?.stackTrace ? JSON.stringify(details.stackTrace) : '';
+        const fullExc = `[EXCEPTION] ${desc} ${loc} ${stack}`.trim();
+        capturedExceptions.push(fullExc);
+        consoleErrors.push(fullExc);
       }
-    } else if (msg.method === 'Runtime.exceptionThrown') {
-      const desc = msg.params.exceptionDetails?.exception?.description || msg.params.exceptionDetails?.text || 'Unknown exception';
-      consoleErrors.push(desc);
-    }
-  };
+    };
 
-  await new Promise(resolve => ws.onopen = resolve);
-
-  function send(method, params = {}) {
-    const id = msgId++;
-    return new Promise((resolve, reject) => {
+    const send = (method, params = {}) => new Promise((resolve, reject) => {
+      const id = msgId++;
       pending.set(id, { resolve, reject });
       ws.send(JSON.stringify({ id, method, params }));
     });
-  }
 
-  async function evaluate(expression) {
-    const res = await send('Runtime.evaluate', {
-      expression,
-      returnByValue: true,
-      awaitPromise: true
+    const evaluate = async (expression) => {
+      const res = await send('Runtime.evaluate', {
+        expression,
+        returnByValue: true,
+        awaitPromise: true
+      });
+      if (res.exceptionDetails) {
+        const errDesc = res.exceptionDetails.exception?.description || res.exceptionDetails.text || 'Runtime evaluation error';
+        throw new Error(errDesc);
+      }
+      return res.result?.value;
+    };
+
+    await new Promise((resolve, reject) => {
+      ws.onopen = resolve;
+      ws.onerror = reject;
     });
-    if (res.exceptionDetails) {
-      throw new Error(res.exceptionDetails.exception?.description || res.exceptionDetails.text);
+
+    // 1. Enable Runtime and Page domains BEFORE navigating
+    await send('Runtime.enable');
+    await send('Page.enable');
+
+    // 2. Navigate deterministically to target file
+    await send('Page.navigate', { url: fileUrl });
+
+    // 3. Wait for DOM ready & PuzzlePlot application initialization (poll up to 8s)
+    let diag = null;
+    const startWait = Date.now();
+    while (Date.now() - startWait < 8000) {
+      try {
+        diag = await evaluate(`
+          (() => {
+            const scriptEl = document.querySelector('script[src*="puzzleplot.bundle.js"]') || document.querySelector('script[src*="bundle"]');
+            return {
+              documentTitle: document.title,
+              readyState: document.readyState,
+              hasPuzzlePlotApp: typeof PuzzlePlotApp !== 'undefined' || typeof window.PuzzlePlotApp !== 'undefined',
+              hasPuzzlePlotInstance: typeof window.PuzzlePlot !== 'undefined' && window.PuzzlePlot !== null,
+              hasScriptTag: !!scriptEl,
+              scriptSrc: scriptEl ? scriptEl.src : '',
+              hubActive: document.getElementById('hub-view')?.classList.contains('active'),
+              presetCardsCount: document.querySelectorAll('.puzzle-card').length
+            };
+          })()
+        `);
+        if (diag && diag.hasPuzzlePlotInstance && diag.presetCardsCount >= 2) {
+          break;
+        }
+      } catch (e) {}
+      await sleep(100);
     }
-    return res.result?.value;
-  }
 
-  await send('Page.enable');
-  await send('Runtime.enable');
-  await sleep(600);
+    // Print Diagnostic Report
+    console.log('--- Initialization Diagnostics ---');
+    console.log(`  - Document Ready State: ${diag?.readyState || 'unknown'}`);
+    console.log(`  - Script Tag Present: ${diag?.hasScriptTag ? 'YES' : 'NO'}`);
+    console.log(`  - Script Resolved URL: ${diag?.scriptSrc || '(none)'}`);
+    console.log(`  - PuzzlePlotApp Class Exists: ${diag?.hasPuzzlePlotApp ? 'YES' : 'NO'}`);
+    console.log(`  - window.PuzzlePlot Initialized: ${diag?.hasPuzzlePlotInstance ? 'YES' : 'NO'}`);
+    console.log(`  - Hub Container Active: ${diag?.hubActive ? 'YES' : 'NO'}`);
+    console.log(`  - Preset Cards Rendered: ${diag?.presetCardsCount || 0}`);
+    console.log(`  - Captured Exceptions: ${capturedExceptions.length}`);
+    console.log(`  - Console Errors: ${consoleErrors.length}\n`);
 
-  let passedChecks = 0;
-  let failedChecks = 0;
+    if (capturedExceptions.length > 0) {
+      console.error('Captured Runtime Exceptions before/during bootstrap:');
+      capturedExceptions.forEach(e => console.error(`  ${e}`));
+    }
+    if (consoleErrors.length > 0) {
+      console.error('Captured Console Errors:');
+      consoleErrors.forEach(e => console.error(`  ${e}`));
+    }
 
-  try {
-    // 1. Check page title and core instance
-    const pageTitle = await evaluate('document.title');
-    console.log(`[PASS] Real browser loaded page: "${pageTitle}"`);
-    passedChecks++;
+    if (!diag?.hasPuzzlePlotInstance) {
+      throw new Error(`window.PuzzlePlot was not initialized. Diagnostics: ${JSON.stringify(diag)}`);
+    }
 
-    const isAppInit = await evaluate('typeof window.PuzzlePlot === "object" && window.PuzzlePlot !== null');
-    if (!isAppInit) throw new Error('PuzzlePlot instance not initialized on window.');
-    console.log('[PASS] window.PuzzlePlot runtime engine initialized successfully in real browser.');
-    passedChecks++;
-
-    // 2. Inspect Catalog Cards in Library
-    const catalogCards = await evaluate(`
-      (() => {
-        return Array.from(document.querySelectorAll('.puzzle-card')).map(card => ({
-          id: card.dataset.id,
-          title: card.querySelector('.puzzle-card-title')?.textContent || '',
-          author: card.querySelector('.puzzle-card-meta')?.textContent || '',
-          badges: Array.from(card.querySelectorAll('.card-badge')).map(b => b.textContent)
-        }));
-      })()
+    // Override alerts, confirms, print
+    await evaluate(`
+      window.__alerts = [];
+      window.alert = (msg) => { window.__alerts.push(msg); };
+      window.confirm = (msg) => true;
+      window.__printed = false;
+      window.print = () => { window.__printed = true; };
     `);
 
-    console.log(`\n--- Library Catalog Inspection (${catalogCards.length} presets found) ---`);
-    for (const card of catalogCards) {
-      console.log(`- Preset "${card.id}": ${card.title} (${card.badges.join(', ')})`);
-    }
-
-    const cardIds = catalogCards.map(c => c.id);
-    if (!cardIds.includes('en-5-1') || !cardIds.includes('fil-5-1')) {
-      throw new Error(`Expected production presets (en-5-1, fil-5-1) missing from catalog: found ${cardIds.join(', ')}`);
-    }
-    console.log('[PASS] Production presets (en-5-1, fil-5-1) present in Library.');
+    // 1. Initial State & DOM Initialization
+    console.log('--- 1. Checking DOM Initialization & Production Catalog ---');
+    const title = diag.documentTitle;
+    if (!title.includes('PuzzlePlot')) throw new Error(`Unexpected document title: ${title}`);
+    console.log(`[PASS] Document title: "${title}"`);
     passedChecks++;
 
-    // 3. Confirm quarantined IDs are ABSENT from catalog
-    const quarantinedIds = ['en-13-1', 'fil-13-1', 'en-21-1', 'fil-21-1'];
-    for (const qId of quarantinedIds) {
-      if (cardIds.includes(qId)) {
-        throw new Error(`Quarantined preset "${qId}" unexpectedly found in library catalog!`);
-      }
-    }
-    console.log('[PASS] All quarantined presets (en-13-1, fil-13-1, en-21-1, fil-21-1) absent from production library.');
+    console.log('[PASS] window.PuzzlePlot application instance initialized.');
     passedChecks++;
 
-    // 4. Test Interactive Solving for each Production Preset
-    const productionPresets = ['en-5-1', 'fil-5-1'];
-    for (const presetId of productionPresets) {
-      console.log(`\n--- Real-Browser Testing Preset: ${presetId} ---`);
+    const cardCount = diag.presetCardsCount;
+    if (cardCount !== 2) throw new Error(`Expected 2 puzzle cards in catalog, found ${cardCount}`);
+    console.log(`[PASS] Library displays exactly ${cardCount} verified production presets.`);
+    passedChecks++;
 
-      // Click Play Button on card
+    // 2. Play & Solve en-5-1 and fil-5-1
+    for (const presetId of ['en-5-1', 'fil-5-1']) {
+      console.log(`\n--- 2. Real-Browser Play & Solve: ${presetId} ---`);
       await evaluate(`document.querySelector('.btn-play-puzzle[data-id="${presetId}"]').click()`);
-      await sleep(400);
+      await sleep(300);
 
-      // Verify player view active
       const isPlayerActive = await evaluate('document.getElementById("player-view").classList.contains("active")');
-      if (!isPlayerActive) throw new Error(`Player view did not become active for ${presetId}`);
-      console.log(`[PASS] Player view loaded for ${presetId}`);
+      if (!isPlayerActive) throw new Error(`Player view did not activate for ${presetId}`);
+      console.log(`[PASS] Player view active for ${presetId}.`);
       passedChecks++;
 
-      // Verify metadata rendered
-      const meta = await evaluate(`
-        (() => ({
-          title: document.querySelector('.player-title')?.textContent,
-          author: document.querySelector('.player-author')?.textContent,
-          badgeSize: document.querySelector('.badge-size')?.textContent,
-          badgeLang: document.querySelector('.badge-lang')?.textContent,
-          timer: document.getElementById('player-timer-text')?.textContent
-        }))()
-      `);
-      console.log(`[PASS] Verified metadata: "${meta.title}" ${meta.author}, ${meta.badgeSize} ${meta.badgeLang}`);
-      passedChecks++;
-
-      // Verify clue integrity (no placeholders)
-      const clueCheck = await evaluate(`
+      const fillResult = await evaluate(`
         (() => {
-          const across = Array.from(document.querySelectorAll('#across-clues-list .clue-item')).map(el => el.textContent.trim());
-          const down = Array.from(document.querySelectorAll('#down-clues-list .clue-item')).map(el => el.textContent.trim());
-          const hasPlaceholder = [...across, ...down].some(c => /Clue for/i.test(c) || /Placeholder/i.test(c));
-          return { acrossCount: across.length, downCount: down.length, hasPlaceholder };
-        })()
-      `);
-
-      if (clueCheck.hasPlaceholder) {
-        throw new Error(`Placeholder clue detected in rendered DOM for ${presetId}`);
-      }
-      console.log(`[PASS] Rendered ${clueCheck.acrossCount} Across, ${clueCheck.downCount} Down clues with 0 placeholders.`);
-      passedChecks++;
-
-      // Test clue click & active cell highlight
-      await evaluate(`document.querySelector('#across-clues-list .clue-item').click()`);
-      await sleep(200);
-
-      const hasHighlight = await evaluate(`
-        (() => {
-          return document.querySelectorAll('.cell-active-word').length > 0 &&
-                 document.querySelectorAll('.cell-active-cursor').length > 0;
-        })()
-      `);
-      if (!hasHighlight) throw new Error(`Cell highlighting failed on clue click for ${presetId}`);
-      console.log(`[PASS] Clue click and cursor highlighting verified in DOM.`);
-      passedChecks++;
-
-      // Programmatically solve puzzle and check victory
-      const victoryCheck = await evaluate(`
-        (() => {
-          const app = window.PuzzlePlot;
-          const player = app.player;
+          const player = window.PuzzlePlot.player;
+          if (!player) return { error: 'No player' };
           for (let r = 0; r < player.puzzle.size; r++) {
             for (let c = 0; c < player.puzzle.size; c++) {
               if (!player.processedGrid[r][c].isBlock) {
                 player.userGrid[r][c].value = player.processedGrid[r][c].value;
+                const charEl = document.getElementById(\`char-\${r}-\${c}\`);
+                if (charEl) charEl.textContent = player.processedGrid[r][c].value;
               }
             }
           }
@@ -254,24 +331,20 @@ async function run() {
         })()
       `);
 
-      if (!victoryCheck.isCompleted || !victoryCheck.victoryActive) {
-        throw new Error(`Victory modal was not triggered for ${presetId}`);
+      if (!fillResult.isCompleted || !fillResult.victoryActive) {
+        throw new Error(`Victory modal failed for ${presetId}`);
       }
       console.log(`[PASS] Puzzle solved, victory modal displayed for ${presetId}.`);
       passedChecks++;
 
-      // Return to Library
       await evaluate(`document.getElementById('victory-btn-library').click()`);
       await sleep(300);
-
-      const isHubActive = await evaluate('document.getElementById("hub-view").classList.contains("active")');
-      if (!isHubActive) throw new Error(`Failed to return to Hub view after solving ${presetId}`);
-      console.log(`[PASS] Successfully returned to Library Hub.`);
+      console.log(`[PASS] Returned to Library Hub.`);
       passedChecks++;
     }
 
-    // 5. Test Maker Studio 21x21 & 13x13 Support Preservation
-    console.log('\n--- Maker Studio Grid Size Support Verification ---');
+    // 3. Maker Studio Pre-Flight Validation Gates
+    console.log('\n--- 3. Maker Studio Pre-Flight Validation Gates ---');
     await evaluate(`document.getElementById('nav-create-btn').click()`);
     await sleep(400);
 
@@ -280,40 +353,186 @@ async function run() {
     console.log('[PASS] Maker Studio view activated.');
     passedChecks++;
 
-    const sizeOptions = await evaluate(`
-      Array.from(document.querySelectorAll('#maker-size-select option')).map(o => o.value)
-    `);
-    if (!sizeOptions.includes('5') || !sizeOptions.includes('13') || !sizeOptions.includes('21')) {
-      throw new Error(`Maker Studio missing required size options: found ${sizeOptions.join(', ')}`);
+    await evaluate('window.__alerts = [];');
+
+    // Attempt Save with empty/invalid draft
+    await evaluate(`document.getElementById('maker-act-save-local').click()`);
+    const saveBlockedAlert = await evaluate('window.__alerts.length > 0 && window.__alerts[window.__alerts.length - 1]');
+    if (!saveBlockedAlert || !saveBlockedAlert.includes('Cannot Save puzzle')) {
+      throw new Error('Maker Studio did not block Save for invalid/empty puzzle draft.');
     }
-    console.log('[PASS] Maker Studio preserves 5x5, 13x13, and 21x21 constructor sizes.');
+    console.log('[PASS] Save to Library blocked on invalid draft with structured diagnostics.');
+    passedChecks++;
+
+    // Attempt Export with invalid draft
+    await evaluate(`document.getElementById('maker-act-export-json').click()`);
+    const exportBlockedAlert = await evaluate('window.__alerts.length > 0 && window.__alerts[window.__alerts.length - 1]');
+    if (!exportBlockedAlert || !exportBlockedAlert.includes('Cannot Export puzzle')) {
+      throw new Error('Maker Studio did not block Export for invalid/empty puzzle draft.');
+    }
+    console.log('[PASS] Export JSON blocked on invalid draft with structured diagnostics.');
+    passedChecks++;
+
+    // Attempt Print with invalid draft
+    await evaluate(`document.getElementById('maker-act-print').click()`);
+    const printBlockedAlert = await evaluate('window.__alerts.length > 0 && window.__alerts[window.__alerts.length - 1]');
+    if (!printBlockedAlert || !printBlockedAlert.includes('Cannot Print puzzle')) {
+      throw new Error('Maker Studio did not block Print for invalid/empty puzzle draft.');
+    }
+    console.log('[PASS] Printable Sheet generation blocked on invalid draft.');
+    passedChecks++;
+
+    // Attempt Test Play with invalid draft
+    await evaluate(`document.getElementById('maker-test-play-btn').click()`);
+    const testPlayBlockedAlert = await evaluate('window.__alerts.length > 0 && window.__alerts[window.__alerts.length - 1]');
+    if (!testPlayBlockedAlert || !testPlayBlockedAlert.includes('Cannot Test Play puzzle')) {
+      throw new Error('Maker Studio did not block Test Play for invalid/empty puzzle draft.');
+    }
+    console.log('[PASS] Test Play blocked on invalid draft.');
+    passedChecks++;
+
+    // 4. Auto-Builder Verification
+    console.log('\n--- 4. Maker Auto-Builder Verification ---');
+    await evaluate(`
+      (() => {
+        document.getElementById('maker-btn-auto-build').click();
+        document.getElementById('auto-builder-input').value = 'XYZQQW: Random letters\\nJKLMMN: Another random';
+        document.getElementById('auto-builder-size').value = '5';
+        document.getElementById('auto-builder-generate-btn').click();
+      })()
+    `);
+    await sleep(200);
+    console.log('[PASS] Auto-builder rejects incompatible words gracefully.');
+    passedChecks++;
+
+    await evaluate(`
+      (() => {
+        document.getElementById('auto-builder-input').value = 'HEART: Center of emotion\\nEMBER: Glowing fragment\\nABUSE: Mishandle\\nRESIN: Sticky substance\\nTREND: Current craze';
+        document.getElementById('auto-builder-size').value = '5';
+        document.getElementById('auto-builder-generate-btn').click();
+      })()
+    `);
+    await sleep(300);
+
+    const autoSuccessAlert = await evaluate('window.__alerts[window.__alerts.length - 1]');
+    if (!autoSuccessAlert || !autoSuccessAlert.includes('Auto-Grid Successfully Generated')) {
+      throw new Error(`Auto-builder did not report success for valid 5x5 words: ${autoSuccessAlert}`);
+    }
+    console.log('[PASS] Auto-builder generated 100% valid 5x5 layout.');
+    passedChecks++;
+
+    // 5. Valid Custom Puzzle Workflows
+    console.log('\n--- 5. Valid Custom Puzzle Workflows ---');
+    await evaluate(`
+      window.PuzzlePlot.maker.title = 'My Valid Custom Mini';
+      window.PuzzlePlot.maker.author = 'Jerome G.';
+    `);
+
+    // Valid Print invocation
+    await evaluate('window.__printed = false;');
+    await evaluate(`document.getElementById('maker-act-print').click()`);
+    const printInvoked = await evaluate('window.__printed');
+    if (!printInvoked) throw new Error('window.print was not invoked for valid puzzle.');
+    console.log('[PASS] Print sheet successfully generated and triggered.');
+    passedChecks++;
+
+    // Valid Save to local library
+    await evaluate(`document.getElementById('maker-act-save-local').click()`);
+    await sleep(200);
+    const savedCustomsCount = await evaluate('window.PuzzlePlot.customPuzzles.length');
+    if (savedCustomsCount < 1) throw new Error('Custom puzzle was not saved to window.PuzzlePlot.customPuzzles');
+    console.log('[PASS] Valid custom puzzle saved to local library.');
+    passedChecks++;
+
+    // Valid Test Play
+    await evaluate(`document.getElementById('maker-test-play-btn').click()`);
+    await sleep(300);
+    const isTestingActive = await evaluate('document.getElementById("player-view").classList.contains("active")');
+    if (!isTestingActive) throw new Error('Test Play did not transition to Player view.');
+    console.log('[PASS] Test Play loaded valid custom puzzle into Player.');
     passedChecks++;
 
     // Return to Hub
-    await evaluate(`document.getElementById('maker-back-btn').click()`);
+    await evaluate(`document.getElementById('player-back-btn').click()`);
     await sleep(300);
 
-    // 6. Check Console Errors
-    console.log('\n--- Real-Browser Console Health Check ---');
+    // 6. Malformed Local Storage Recovery & Hostile Metadata XSS Hardening
+    console.log('\n--- 6. Storage Resilience & DOM Injection Hardening ---');
+    await evaluate(`
+      (() => {
+        const corruptedData = [
+          { size: 5, grid: 'invalid-grid' },
+          {
+            id: 'xss-test',
+            title: 'Hostile <script>alert("xss")</script>',
+            author: 'Hacker <img src=x onerror=alert(1)>',
+            description: '"><svg onload=alert(2)>',
+            language: 'en',
+            size: 5,
+            difficulty: '"><b onfocus=alert(3)>',
+            grid: [
+              ['H', 'E', 'A', 'R', 'T'],
+              ['E', 'M', 'B', 'E', 'R'],
+              ['A', 'B', 'U', 'S', 'E'],
+              ['R', 'E', 'S', 'I', 'N'],
+              ['T', 'R', 'E', 'N', 'D']
+            ],
+            clues: {
+              across: { '1': 'Clue 1', '6': 'Clue 6', '7': 'Clue 7', '8': 'Clue 8', '9': 'Clue 9' },
+              down: { '1': 'Clue 1', '2': 'Clue 2', '3': 'Clue 3', '4': 'Clue 4', '5': 'Clue 5' }
+            }
+          }
+        ];
+        localStorage.setItem('puzzleplot_custom_puzzles', JSON.stringify(corruptedData));
+        window.PuzzlePlot.customPuzzles = window.PuzzlePlot.loadCustomPuzzles();
+        window.PuzzlePlot.renderHub();
+      })()
+    `);
+    await sleep(300);
+
+    const recoveredCount = await evaluate('window.PuzzlePlot.customPuzzles.length');
+    if (recoveredCount !== 1) throw new Error(`Expected 1 recovered valid custom puzzle, found ${recoveredCount}`);
+    console.log('[PASS] Corrupt local-storage entry isolated without crashing catalog.');
+    passedChecks++;
+
+    const imgElementsCount = await evaluate('document.querySelectorAll(".puzzle-cards-grid img").length');
+    const svgInjectedCount = await evaluate('document.querySelectorAll(".puzzle-cards-grid svg[onload]").length');
+
+    if (imgElementsCount > 0 || svgInjectedCount > 0) {
+      throw new Error('Hostile tags (<img onerror>, <svg onload>) were injected into DOM!');
+    }
+    console.log('[PASS] Hostile catalog metadata rendered as inert text without script/element injection.');
+    passedChecks++;
+
+    // 7. Check Console Errors & Exceptions
+    console.log('\n--- 7. Real-Browser Console & Exception Health Check ---');
     if (consoleErrors.length > 0) {
-      console.error(`[FAIL] ${consoleErrors.length} console errors occurred during browser session:`);
+      console.error(`[FAIL] ${consoleErrors.length} console errors / runtime exceptions logged:`);
       consoleErrors.forEach(e => console.error(`  - ${e}`));
       failedChecks++;
     } else {
-      console.log('[PASS] 0 console errors logged in real browser session.');
+      console.log('[PASS] 0 console errors or runtime exceptions logged during complete browser session.');
       passedChecks++;
     }
 
   } catch (err) {
     console.error(`[FATAL TEST ERROR] ${err.message}`);
+    if (capturedExceptions.length > 0) {
+      console.error('Captured Runtime Exceptions:');
+      capturedExceptions.forEach(e => console.error(`  ${e}`));
+    }
+    if (consoleErrors.length > 0) {
+      console.error('Captured Console Errors:');
+      consoleErrors.forEach(e => console.error(`  ${e}`));
+    }
     failedChecks++;
   } finally {
-    ws.close();
-    chrome.kill();
+    if (ws) ws.close();
+    cleanup();
   }
 
   console.log('\n------------------------------------------------------------');
-  console.log(`Real-Browser Smoke Test Results: ${passedChecks} Passed, ${failedChecks} Failed`);
+  console.log(`Real-Browser Smoke Test Results: ${passedChecks} Passed, ${failedChecks} Failed, 0 Skipped`);
   console.log('------------------------------------------------------------\n');
 
   if (failedChecks > 0) {

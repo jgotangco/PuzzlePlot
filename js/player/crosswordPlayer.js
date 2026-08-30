@@ -440,13 +440,14 @@ export class CrosswordPlayer {
 
     return wordList.map(w => {
       const clueText = clueDict[w.number.toString()] || clueDict[w.number] || `Clue for ${w.number} ${direction}`;
+      const safeClueText = this.escapeHtml(clueText);
       return `
         <div class="clue-item" 
              id="clue-${direction}-${w.number}" 
              data-direction="${direction}" 
              data-number="${w.number}">
           <span class="clue-num-tag">${w.number}</span>
-          <span class="clue-desc">${this.escapeHtml(clueText)}</span>
+          <span class="clue-desc">${safeClueText}</span>
         </div>
       `;
     }).join('');
@@ -1154,8 +1155,13 @@ export class CrosswordPlayer {
   }
 
   escapeHtml(str) {
-    if (!str) return '';
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    if (str == null) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   destroy() {

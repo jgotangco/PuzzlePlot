@@ -1,0 +1,34 @@
+name: CI Test Suite
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Node ${{ matrix.node-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+        node-version: [ 18.x, 20.x, 22.x ]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Verify Bundle Synchronization & Consistency
+        run: node scripts/check-bundle-consistency.js
+
+      - name: Run Deterministic P1 Architecture, Integrity & Safety Tests
+        run: node scripts/test-p1-integrity.js
+
+      - name: Run Production Preset Data Integrity Validation
+        run: node scripts/validate-presets.js

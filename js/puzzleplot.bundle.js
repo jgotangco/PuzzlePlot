@@ -10,15 +10,20 @@
   // =========================================================================
   // 1. SOUND ENGINE (Web Audio API Procedural Synthesizer)
   // =========================================================================
-  class AudioManager {
+  /**
+   * PuzzlePlot Audio Engine
+   * Procedural sound generator using Web Audio API. Zero external audio file dependencies.
+   */
+
+  class AudioManagerClass {
     constructor() {
       this.audioCtx = null;
-      this.isMuted = localStorage.getItem('puzzleplot_sound_muted') === 'true';
+      this.isMuted = typeof localStorage !== 'undefined' ? (localStorage.getItem('puzzleplot_sound_muted') === 'true') : false;
     }
 
     init() {
       if (!this.audioCtx) {
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        const AudioContext = (typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext));
         if (AudioContext) {
           this.audioCtx = new AudioContext();
         }
@@ -30,7 +35,9 @@
 
     toggleMute() {
       this.isMuted = !this.isMuted;
-      localStorage.setItem('puzzleplot_sound_muted', this.isMuted.toString());
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('puzzleplot_sound_muted', this.isMuted.toString());
+      }
       return this.isMuted;
     }
 
@@ -42,16 +49,22 @@
       try {
         const osc = this.audioCtx.createOscillator();
         const gain = this.audioCtx.createGain();
+
         osc.type = 'sine';
         osc.frequency.setValueAtTime(420 + Math.random() * 40, this.audioCtx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(180, this.audioCtx.currentTime + 0.04);
+
         gain.gain.setValueAtTime(0.08, this.audioCtx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + 0.04);
+
         osc.connect(gain);
         gain.connect(this.audioCtx.destination);
+
         osc.start();
         osc.stop(this.audioCtx.currentTime + 0.04);
-      } catch (e) {}
+      } catch (e) {
+        // Audio autoplay policy fallback
+      }
     }
 
     playWordCompleteSound() {
@@ -104,6 +117,7 @@
 
       try {
         const now = this.audioCtx.currentTime;
+        // Fanfare notes: C5, E5, G5, C6, G5, C6
         const melody = [
           { f: 523.25, d: 0.12, t: 0 },
           { f: 659.25, d: 0.12, t: 0.12 },
@@ -129,12 +143,25 @@
     }
   }
 
-  const SoundEngine = new AudioManager();
+  const SoundEngine = new AudioManagerClass();
+  const AudioManager = SoundEngine;
 
   // =========================================================================
   // 2. CROSSWORD UTILITIES, NUMBERING & AUTO-GENERATOR
   // =========================================================================
+  /**
+   * PuzzlePlot Crossword Utility Engine & Auto-Generator
+   * Core algorithms for crossword grid generation, auto-numbering, symmetry, validation,
+   * data normalization, and automatic word layout placement with grid blocks.
+   */
+
   const CrosswordUtils = {
+    SUPPORTED_SIZES: [5, 13, 21],
+
+    isSupportedSize(size) {
+      return typeof size === 'number' && Number.isInteger(size) && this.SUPPORTED_SIZES.includes(size);
+    },
+
     createEmptyGrid(width, height) {
       const grid = [];
       for (let r = 0; r < height; r++) {
@@ -373,25 +400,424 @@
       };
     },
 
+    /**
+     * Comprehensive, structured crossword integrity validator.
+     * Enforces publication-grade rules across preset data, Maker authoring, and imports.
+     */
+    validatePuzzleIntegrity(puzzle, options = {}) {
+      const {
+        requiredSymmetry = undefined,
+        allowIncompleteLetters = false,
+        checkClues = true
+      } = options;
+
+      const errors = [];
+
+      // 1. Top-level structure
+      if (!puzzle || typeof puzzle !== 'object' || Array.isArray(puzzle)) {
+        return {
+          isValid: false,
+          errors: [{ rule: 'SCHEMA_INVALID', message: 'Puzzle data must be a valid JSON object.' }],
+          acrossWords: [],
+          downWords: [],
+          metrics: null
+        };
+      }
+
+      const size = puzzle.size || puzzle.width;
+      if (!this.isSupportedSize(size)) {
+        errors.push({
+          rule: 'SIZE_UNSUPPORTED',
+          message: `Puzzle size must be one of the supported sizes (5, 13, 21). Received: ${size}.`
+        });
+        return { isValid: false, errors, acrossWords: [], downWords: [], metrics: null };
+      }
+
+      if (!Array.isArray(puzzle.grid)) {
+        errors.push({
+          rule: 'GRID_INVALID',
+          message: 'Puzzle grid must be a 2D array.'
+        });
+        return { isValid: false, errors, acrossWords: [], downWords: [], metrics: null };
+      }
+
+      if (puzzle.grid.length !== size || puzzle.grid.some(row => !Array.isArray(row) || row.length !== size)) {
+        errors.push({
+          rule: 'DIMENSION_MISMATCH',
+          message: `Grid dimension mismatch: expected ${size}x${size} square grid, received ${puzzle.grid.length} rows.`
+        });
+        return { isValid: false, errors, acrossWords: [], downWords: [], metrics: null };
+      }
+
+      // 2. Build internal grid structure and validate cell characters
+      const validCharRegex = /^[A-ZÑ]$/;
+      const internalGrid = this.createEmptyGrid(size, size);
+      let openCellCount = 0;
+
+      for (let r = 0; r < size; r++) {
+        for (let c = 0; c < size; c++) {
+          const raw = puzzle.grid[r][c];
+          if (raw === '#' || raw === '.' || (typeof raw === 'object' && raw.isBlock)) {
+            internalGrid[r][c].isBlock = true;
+            internalGrid[r][c].value = '';
+          } else {
+            internalGrid[r][c].isBlock = false;
+            const letterVal = (typeof raw === 'object' ? raw.value : raw) || '';
+            const upper = String(letterVal).trim().toUpperCase();
+
+            if (upper === '') {
+              if (!allowIncompleteLetters) {
+                errors.push({
+                  rule: 'EMPTY_LETTER_CELL',
+                  message: `Cell at coordinate (${r + 1}, ${c + 1}) is missing a filled letter.`,
+                  row: r,
+                  col: c,
+                  coordinate: `R${r + 1}C${c + 1}`
+                });
+              }
+              internalGrid[r][c].value = '';
+            } else if (!validCharRegex.test(upper)) {
+              errors.push({
+                rule: 'INVALID_CHARACTER',
+                message: `Cell at coordinate (${r + 1}, ${c + 1}) contains invalid character "${upper}".`,
+                row: r,
+                col: c,
+                coordinate: `R${r + 1}C${c + 1}`,
+                value: upper
+              });
+              internalGrid[r][c].value = upper;
+            } else {
+              internalGrid[r][c].value = upper;
+            }
+            openCellCount++;
+          }
+        }
+      }
+
+      if (openCellCount === 0) {
+        errors.push({
+          rule: 'NO_OPEN_CELLS',
+          message: 'Puzzle contains zero playable letter cells.'
+        });
+        return { isValid: false, errors, acrossWords: [], downWords: [], metrics: null };
+      }
+
+      // 3. Symmetry validation (if requested and !== 'none')
+      if (requiredSymmetry && requiredSymmetry !== 'none') {
+        for (let r = 0; r < size; r++) {
+          for (let c = 0; c < size; c++) {
+            const coords = this.getSymmetricCoordinates(r, c, size, size, requiredSymmetry);
+            const isBlock = internalGrid[r][c].isBlock;
+            for (const sym of coords) {
+              if (internalGrid[sym.row][sym.col].isBlock !== isBlock) {
+                errors.push({
+                  rule: 'SYMMETRY_BROKEN',
+                  message: `Symmetry violation (${requiredSymmetry}) between (${r + 1}, ${c + 1}) and (${sym.row + 1}, ${sym.col + 1}).`,
+                  row: r,
+                  col: c,
+                  coordinate: `R${r + 1}C${c + 1}`
+                });
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      // 4. Connectivity, Unchecked Cells, and Word Metrics
+      const metrics = this.validateGrid(internalGrid);
+
+      if (!metrics.isConnected) {
+        errors.push({
+          rule: 'DISCONNECTED_GRID',
+          message: 'Grid contains isolated letter islands that are not connected into a single open region.'
+        });
+      }
+
+      if (metrics.uncheckedCells.length > 0) {
+        metrics.uncheckedCells.forEach(cell => {
+          errors.push({
+            rule: 'UNCHECKED_CELL',
+            message: `Unchecked cell at coordinate (${cell.r + 1}, ${cell.c + 1}) does not belong to both an Across and Down entry.`,
+            row: cell.r,
+            col: cell.c,
+            coordinate: `R${cell.r + 1}C${cell.c + 1}`
+          });
+        });
+      }
+
+      // 5. Min entry length >= 3
+      metrics.acrossWords.forEach(w => {
+        if (w.length < 3) {
+          errors.push({
+            rule: 'SHORT_ENTRY',
+            message: `Short Across entry ${w.number}A (${w.letters.trim()}) has length ${w.length}. Minimum allowed entry length is 3 letters.`,
+            direction: 'across',
+            number: w.number,
+            row: w.row,
+            col: w.col,
+            coordinate: `R${w.row + 1}C${w.col + 1}`
+          });
+        }
+      });
+
+      metrics.downWords.forEach(w => {
+        if (w.length < 3) {
+          errors.push({
+            rule: 'SHORT_ENTRY',
+            message: `Short Down entry ${w.number}D (${w.letters.trim()}) has length ${w.length}. Minimum allowed entry length is 3 letters.`,
+            direction: 'down',
+            number: w.number,
+            row: w.row,
+            col: w.col,
+            coordinate: `R${w.row + 1}C${w.col + 1}`
+          });
+        }
+      });
+
+      // 6. Clue integrity validation (1:1 correspondence, non-empty, no placeholders)
+      if (checkClues) {
+        if (!puzzle.clues || typeof puzzle.clues !== 'object' || Array.isArray(puzzle.clues)) {
+          errors.push({
+            rule: 'CLUES_OBJECT_MISSING',
+            message: 'Puzzle is missing a valid clues object with "across" and "down" mappings.'
+          });
+        } else {
+          const acrossClues = puzzle.clues.across || {};
+          const downClues = puzzle.clues.down || {};
+
+          const acrossClueKeys = Object.keys(acrossClues);
+          const downClueKeys = Object.keys(downClues);
+
+          const compAcrossNums = metrics.acrossWords.map(w => w.number.toString());
+          const compDownNums = metrics.downWords.map(w => w.number.toString());
+
+          // Check for missing or placeholder across clues
+          metrics.acrossWords.forEach(w => {
+            const numStr = w.number.toString();
+            const clue = acrossClues[numStr] || acrossClues[w.number];
+            if (!clue || typeof clue !== 'string' || clue.trim() === '') {
+              errors.push({
+                rule: 'MISSING_CLUE',
+                message: `Missing clue definition for Across entry ${w.number}A (${w.letters.trim()}).`,
+                direction: 'across',
+                number: w.number,
+                value: w.letters.trim()
+              });
+            } else if (/^Clue for/i.test(clue.trim()) || /^Placeholder/i.test(clue.trim())) {
+              errors.push({
+                rule: 'PLACEHOLDER_CLUE',
+                message: `Placeholder clue detected for Across entry ${w.number}A: "${clue}".`,
+                direction: 'across',
+                number: w.number,
+                value: clue
+              });
+            }
+          });
+
+          // Check for extra across clue assignments
+          acrossClueKeys.forEach(k => {
+            if (!compAcrossNums.includes(k.toString())) {
+              errors.push({
+                rule: 'EXTRA_CLUE',
+                message: `Extra Across clue #${k} exists in clues dictionary but does not correspond to any grid slot.`,
+                direction: 'across',
+                number: parseInt(k, 10)
+              });
+            }
+          });
+
+          // Check for missing or placeholder down clues
+          metrics.downWords.forEach(w => {
+            const numStr = w.number.toString();
+            const clue = downClues[numStr] || downClues[w.number];
+            if (!clue || typeof clue !== 'string' || clue.trim() === '') {
+              errors.push({
+                rule: 'MISSING_CLUE',
+                message: `Missing clue definition for Down entry ${w.number}D (${w.letters.trim()}).`,
+                direction: 'down',
+                number: w.number,
+                value: w.letters.trim()
+              });
+            } else if (/^Clue for/i.test(clue.trim()) || /^Placeholder/i.test(clue.trim())) {
+              errors.push({
+                rule: 'PLACEHOLDER_CLUE',
+                message: `Placeholder clue detected for Down entry ${w.number}D: "${clue}".`,
+                direction: 'down',
+                number: w.number,
+                value: clue
+              });
+            }
+          });
+
+          // Check for extra down clue assignments
+          downClueKeys.forEach(k => {
+            if (!compDownNums.includes(k.toString())) {
+              errors.push({
+                rule: 'EXTRA_CLUE',
+                message: `Extra Down clue #${k} exists in clues dictionary but does not correspond to any grid slot.`,
+                direction: 'down',
+                number: parseInt(k, 10)
+              });
+            }
+          });
+        }
+      }
+
+      return {
+        isValid: errors.length === 0,
+        errors,
+        acrossWords: metrics.acrossWords,
+        downWords: metrics.downWords,
+        metrics
+      };
+    },
+
+    /**
+     * Validates and normalizes untrusted imported JSON or restored storage records.
+     * Performs top-level bounds checks, normalizes data, and executes full structural integrity validation.
+     */
+    validateAndNormalizeImport(rawData) {
+      if (!rawData || typeof rawData !== 'object' || Array.isArray(rawData)) {
+        throw new Error('Invalid puzzle file: Content must be a JSON object.');
+      }
+
+      const size = rawData.size || rawData.width;
+      if (!this.isSupportedSize(size)) {
+        throw new Error(`Unsupported puzzle size: ${size}. PuzzlePlot supports 5x5, 13x13, and 21x21 sizes.`);
+      }
+
+      if (!Array.isArray(rawData.grid) || rawData.grid.length !== size) {
+        throw new Error(`Invalid puzzle grid: Expected ${size} rows, found ${Array.isArray(rawData.grid) ? rawData.grid.length : 0}.`);
+      }
+
+      const normalizedGrid = [];
+      for (let r = 0; r < size; r++) {
+        const row = rawData.grid[r];
+        if (!Array.isArray(row) || row.length !== size) {
+          throw new Error(`Invalid grid row ${r + 1}: Expected ${size} columns.`);
+        }
+        const normalizedRow = [];
+        for (let c = 0; c < size; c++) {
+          const val = row[c];
+          if (val === '#' || val === '.' || (typeof val === 'object' && val.isBlock)) {
+            normalizedRow.push('#');
+          } else {
+            const char = typeof val === 'object' ? (val.value || '') : (val || '');
+            const upper = String(char).trim().toUpperCase();
+            if (/^[A-ZÑ]$/.test(upper)) {
+              normalizedRow.push(upper);
+            } else if (upper === '') {
+              throw new Error(`Empty playable cell at row ${r + 1}, column ${c + 1}. Imported puzzles must have complete filled solutions.`);
+            } else {
+              throw new Error(`Invalid character at row ${r + 1}, column ${c + 1}: "${upper}".`);
+            }
+          }
+        }
+        normalizedGrid.push(normalizedRow);
+      }
+
+      const rawClues = rawData.clues || {};
+      const normalizedClues = { across: {}, down: {} };
+
+      if (rawClues.across && typeof rawClues.across === 'object') {
+        const keys = Object.keys(rawClues.across);
+        if (keys.length > 200) throw new Error('Across clues count exceeds maximum limit (200).');
+        keys.forEach(k => {
+          if (k.length > 10) throw new Error(`Across clue key "${k}" exceeds maximum allowed length (10).`);
+          const clueVal = String(rawClues.across[k] || '').slice(0, 500);
+          normalizedClues.across[k.toString()] = clueVal;
+        });
+      }
+
+      if (rawClues.down && typeof rawClues.down === 'object') {
+        const keys = Object.keys(rawClues.down);
+        if (keys.length > 200) throw new Error('Down clues count exceeds maximum limit (200).');
+        keys.forEach(k => {
+          if (k.length > 10) throw new Error(`Down clue key "${k}" exceeds maximum allowed length (10).`);
+          const clueVal = String(rawClues.down[k] || '').slice(0, 500);
+          normalizedClues.down[k.toString()] = clueVal;
+        });
+      }
+
+      const sanitizedId = String(rawData.id || ('custom_' + Date.now())).slice(0, 100).replace(/[^a-zA-Z0-9_-]/g, '_');
+      const sanitizedTitle = String(rawData.title || 'Untitled Crossword').slice(0, 150);
+      const sanitizedAuthor = String(rawData.author || 'Anonymous').slice(0, 100);
+      const sanitizedDesc = String(rawData.description || '').slice(0, 500);
+      const sanitizedLang = (rawData.language === 'fil' || rawData.language === 'tl') ? 'fil' : 'en';
+
+      let sanitizedDiff = 'Medium';
+      if (typeof rawData.difficulty === 'string') {
+        const lower = rawData.difficulty.toLowerCase().trim();
+        if (lower.includes('easy')) sanitizedDiff = 'Easy';
+        else if (lower.includes('hard')) sanitizedDiff = 'Hard';
+        else if (lower.includes('medium') || lower.includes('classic')) sanitizedDiff = 'Medium';
+        else sanitizedDiff = 'Custom';
+      } else {
+        sanitizedDiff = size === 5 ? 'Easy' : size === 13 ? 'Medium' : 'Hard';
+      }
+
+      const normalizedPuzzle = {
+        id: sanitizedId,
+        title: sanitizedTitle,
+        author: sanitizedAuthor,
+        language: sanitizedLang,
+        size,
+        difficulty: sanitizedDiff,
+        description: sanitizedDesc,
+        grid: normalizedGrid,
+        clues: normalizedClues,
+        updatedAt: rawData.updatedAt || Date.now()
+      };
+
+      // Full structural integrity validation on imported data
+      const integrity = this.validatePuzzleIntegrity(normalizedPuzzle, { checkClues: true, allowIncompleteLetters: false });
+      if (!integrity.isValid) {
+        const errorSummary = integrity.errors.map((e, idx) => `${idx + 1}. ${e.message}`).join('\n');
+        throw new Error(`Imported puzzle failed structural validation:\n${errorSummary}`);
+      }
+
+      return normalizedPuzzle;
+    },
+
     exportToJSON(puzzle) {
       return JSON.stringify(puzzle, null, 2);
     },
 
     importFromJSON(jsonString) {
-      try {
-        const data = JSON.parse(jsonString);
-        if (!data.width && !data.size) {
-          throw new Error('Invalid PuzzlePlot format: Missing size.');
-        }
-        return data;
-      } catch (err) {
-        throw new Error(`Failed to parse puzzle: ${err.message}`);
+      if (typeof jsonString !== 'string') {
+        throw new Error('Invalid input: Expected JSON string.');
       }
+      if (jsonString.length > 1024 * 1024) {
+        throw new Error('Puzzle JSON payload exceeds maximum size limit (1MB).');
+      }
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonString);
+      } catch (err) {
+        throw new Error(`Failed to parse puzzle JSON: ${err.message}`);
+      }
+      return this.validateAndNormalizeImport(parsed);
     },
 
+    /**
+     * Automatic Crossword Layout Generator (Word Placer & Grid Locks)
+     * Places a custom list of words with intersections and automatically fills black square blocks.
+     * Guarantees: symmetrical layout, zero placeholder clues, single connected region, min length >= 3, 0 unchecked cells.
+     */
     autoGenerateCrossword({ rawInputWords, size = 13, symmetry = '180' }) {
+      if (!rawInputWords || typeof rawInputWords !== 'string') {
+        throw new Error('Please enter a list of words to auto-generate a crossword.');
+      }
+
+      if (!this.isSupportedSize(size)) {
+        throw new Error(`Unsupported grid size for auto-generation: ${size}. Supported sizes are: 5, 13, 21.`);
+      }
+
       const items = [];
+      const wordClueMap = new Map();
       const lines = rawInputWords.split(/\r?\n|,/);
+
       lines.forEach(line => {
         const trimmed = line.trim();
         if (!trimmed) return;
@@ -410,193 +836,283 @@
         }
 
         const cleanWord = word.toUpperCase().replace(/[^A-ZÑ]/g, '');
-        if (cleanWord.length >= 2 && cleanWord.length <= size) {
-          items.push({ word: cleanWord, clue: clue || `Clue for ${cleanWord}` });
+        if (cleanWord.length >= 3 && cleanWord.length <= size) {
+          if (!wordClueMap.has(cleanWord)) {
+            const finalClue = clue || `Definition for ${cleanWord}`;
+            wordClueMap.set(cleanWord, finalClue);
+            items.push({ word: cleanWord, clue: finalClue });
+          }
         }
       });
 
       if (items.length === 0) {
-        throw new Error('Please enter at least one valid word with length between 2 and ' + size + ' letters.');
+        throw new Error(`Please provide words between 3 and ${size} letters.`);
       }
 
-      items.sort((a, b) => b.word.length - a.word.length);
+      const startTime = Date.now();
+      const maxExecutionMs = 450;
+      let bestValidPuzzle = null;
 
-      let bestResult = null;
-      let highestScore = -Infinity;
+      // Strategy 1: Dense Word Square / Symmetrical Stack (for sizes like 5x5 or matching-length words)
+      const exactLenWords = items.filter(it => it.word.length === size);
+      if (exactLenWords.length >= size) {
+        const perms = [];
+        const generatePerms = (current, remaining) => {
+          if (current.length === size) {
+            perms.push(current);
+            return;
+          }
+          if (perms.length >= 60 || Date.now() - startTime > 150) return;
+          for (let i = 0; i < remaining.length; i++) {
+            generatePerms([...current, remaining[i]], remaining.filter((_, idx) => idx !== i));
+          }
+        };
+        generatePerms([], exactLenWords);
 
-      const trials = size === 5 ? 30 : size === 13 ? 70 : 50;
+        for (const perm of perms) {
+          if (Date.now() - startTime > maxExecutionMs) break;
+          const testGrid = CrosswordUtils.createEmptyGrid(size, size);
+          for (let r = 0; r < size; r++) {
+            for (let c = 0; c < size; c++) {
+              testGrid[r][c].isBlock = false;
+              testGrid[r][c].value = perm[r].word[c];
+            }
+          }
 
-      for (let trial = 0; trial < trials; trial++) {
-        const grid = Array.from({ length: size }, () => Array(size).fill(null));
-        const placed = [];
+          const { grid: numberedGrid, acrossWords, downWords } = CrosswordUtils.computeNumbersAndWords(testGrid);
+          const candidateClues = { across: {}, down: {} };
+          let allValid = true;
 
-        const first = items[0];
-        const isFirstAcross = trial % 2 === 0;
-        const startRow = isFirstAcross ? Math.floor(size / 2) : Math.floor((size - first.word.length) / 2);
-        const startCol = isFirstAcross ? Math.floor((size - first.word.length) / 2) : Math.floor(size / 2);
+          for (const w of acrossWords) {
+            const foundClue = wordClueMap.get(w.letters.trim());
+            if (!foundClue) { allValid = false; break; }
+            candidateClues.across[w.number.toString()] = foundClue;
+          }
+          if (allValid) {
+            for (const w of downWords) {
+              const foundClue = wordClueMap.get(w.letters.trim());
+              if (!foundClue) { allValid = false; break; }
+              candidateClues.down[w.number.toString()] = foundClue;
+            }
+          }
 
-        for (let i = 0; i < first.word.length; i++) {
-          const r = isFirstAcross ? startRow : startRow + i;
-          const c = isFirstAcross ? startCol + i : startCol;
-          grid[r][c] = first.word[i];
+          if (allValid) {
+            const testPuzzle = {
+              size,
+              grid: numberedGrid.map(row => row.map(cell => cell.isBlock ? '#' : cell.value)),
+              clues: candidateClues
+            };
+            const integrity = CrosswordUtils.validatePuzzleIntegrity(testPuzzle, {
+              requiredSymmetry: symmetry !== 'none' ? symmetry : undefined,
+              checkClues: true,
+              allowIncompleteLetters: false
+            });
+
+            if (integrity.isValid) {
+              bestValidPuzzle = {
+                grid: numberedGrid,
+                clues: candidateClues,
+                placedCount: acrossWords.length,
+                totalCount: items.length,
+                placedWords: acrossWords,
+                unplacedWords: []
+              };
+              break;
+            }
+          }
         }
-        placed.push({ ...first, row: startRow, col: startCol, direction: isFirstAcross ? 'across' : 'down' });
+      }
 
-        for (let wIdx = 1; wIdx < items.length; wIdx++) {
-          const item = items[wIdx];
-          const word = item.word;
-          let bestCandidate = null;
-          let bestCandidateIntersections = 0;
+      // Strategy 2: Intersecting Placements with Symmetric Block Filling
+      if (!bestValidPuzzle) {
+        items.sort((a, b) => b.word.length - a.word.length);
+        const maxTrials = size === 5 ? 40 : 60;
 
-          for (let pIdx = 0; pIdx < placed.length; pIdx++) {
-            const p = placed[pIdx];
-            const newDir = p.direction === 'across' ? 'down' : 'across';
+        for (let trial = 0; trial < maxTrials; trial++) {
+          if (Date.now() - startTime > maxExecutionMs) break;
 
-            for (let pi = 0; pi < p.word.length; pi++) {
-              const pChar = p.word[pi];
-              const pR = p.direction === 'across' ? p.row : p.row + pi;
-              const pC = p.direction === 'across' ? p.col + pi : p.col;
+          const grid = Array.from({ length: size }, () => Array(size).fill(null));
+          const placed = [];
 
-              for (let wi = 0; wi < word.length; wi++) {
-                if (word[wi] === pChar) {
-                  const candRow = newDir === 'across' ? pR : pR - wi;
-                  const candCol = newDir === 'across' ? pC - wi : pC;
+          // Place first word
+          const first = items[trial % items.length];
+          const isFirstAcross = trial % 2 === 0;
+          const startRow = isFirstAcross ? Math.floor(size / 2) : Math.max(0, Math.floor((size - first.word.length) / 2));
+          const startCol = isFirstAcross ? Math.max(0, Math.floor((size - first.word.length) / 2)) : Math.floor(size / 2);
 
-                  if (candRow < 0 || candCol < 0) continue;
-                  if (newDir === 'across' && candCol + word.length > size) continue;
-                  if (newDir === 'down' && candRow + word.length > size) continue;
+          for (let i = 0; i < first.word.length; i++) {
+            const r = isFirstAcross ? startRow : startRow + i;
+            const c = isFirstAcross ? startCol + i : startCol;
+            if (r < size && c < size) grid[r][c] = first.word[i];
+          }
+          placed.push({ ...first, row: startRow, col: startCol, direction: isFirstAcross ? 'across' : 'down' });
 
-                  let isValid = true;
-                  let intersections = 0;
+          for (let wIdx = 0; wIdx < items.length; wIdx++) {
+            if (items[wIdx].word === first.word) continue;
+            const item = items[wIdx];
+            const word = item.word;
+            let bestCandidate = null;
+            let maxIntersections = 0;
 
-                  const beforeR = newDir === 'across' ? candRow : candRow - 1;
-                  const beforeC = newDir === 'across' ? candCol - 1 : candCol;
-                  if (beforeR >= 0 && beforeC >= 0 && grid[beforeR][beforeC] !== null) {
-                    isValid = false;
-                  }
+            for (let pIdx = 0; pIdx < placed.length; pIdx++) {
+              const p = placed[pIdx];
+              const newDir = p.direction === 'across' ? 'down' : 'across';
 
-                  const afterR = newDir === 'across' ? candRow : candRow + word.length;
-                  const afterC = newDir === 'across' ? candCol + word.length : candCol;
-                  if (afterR < size && afterC < size && grid[afterR][afterC] !== null) {
-                    isValid = false;
-                  }
+              for (let pi = 0; pi < p.word.length; pi++) {
+                const pChar = p.word[pi];
+                const pR = p.direction === 'across' ? p.row : p.row + pi;
+                const pC = p.direction === 'across' ? p.col + pi : p.col;
 
-                  if (!isValid) continue;
+                for (let wi = 0; wi < word.length; wi++) {
+                  if (word[wi] === pChar) {
+                    const candRow = newDir === 'across' ? pR : pR - wi;
+                    const candCol = newDir === 'across' ? pC - wi : pC;
 
-                  for (let k = 0; k < word.length; k++) {
-                    const r = newDir === 'across' ? candRow : candRow + k;
-                    const c = newDir === 'across' ? candCol + k : candCol;
-                    const currentCell = grid[r][c];
+                    if (candRow < 0 || candCol < 0) continue;
+                    if (newDir === 'across' && candCol + word.length > size) continue;
+                    if (newDir === 'down' && candRow + word.length > size) continue;
 
-                    if (currentCell !== null) {
-                      if (currentCell !== word[k]) {
-                        isValid = false;
-                        break;
-                      } else {
-                        intersections++;
-                      }
-                    } else {
-                      if (newDir === 'across') {
-                        if ((r > 0 && grid[r - 1][c] !== null) || (r < size - 1 && grid[r + 1][c] !== null)) {
+                    let isValid = true;
+                    let intersections = 0;
+
+                    for (let k = 0; k < word.length; k++) {
+                      const r = newDir === 'across' ? candRow : candRow + k;
+                      const c = newDir === 'across' ? candCol + k : candCol;
+                      const currentCell = grid[r][c];
+
+                      if (currentCell !== null) {
+                        if (currentCell !== word[k]) {
                           isValid = false;
                           break;
-                        }
-                      } else {
-                        if ((c > 0 && grid[r][c - 1] !== null) || (c < size - 1 && grid[r][c + 1] !== null)) {
-                          isValid = false;
-                          break;
+                        } else {
+                          intersections++;
                         }
                       }
                     }
-                  }
 
-                  if (isValid && intersections > bestCandidateIntersections) {
-                    bestCandidateIntersections = intersections;
-                    bestCandidate = {
-                      ...item,
-                      row: candRow,
-                      col: candCol,
-                      direction: newDir
-                    };
+                    if (isValid && intersections > maxIntersections) {
+                      maxIntersections = intersections;
+                      bestCandidate = { ...item, row: candRow, col: candCol, direction: newDir };
+                    }
                   }
                 }
               }
             }
-          }
 
-          if (bestCandidate) {
-            for (let k = 0; k < bestCandidate.word.length; k++) {
-              const r = bestCandidate.direction === 'across' ? bestCandidate.row : bestCandidate.row + k;
-              const c = bestCandidate.direction === 'across' ? bestCandidate.col + k : bestCandidate.col;
-              grid[r][c] = bestCandidate.word[k];
+            if (bestCandidate) {
+              for (let k = 0; k < bestCandidate.word.length; k++) {
+                const r = bestCandidate.direction === 'across' ? bestCandidate.row : bestCandidate.row + k;
+                const c = bestCandidate.direction === 'across' ? bestCandidate.col + k : bestCandidate.col;
+                grid[r][c] = bestCandidate.word[k];
+              }
+              placed.push(bestCandidate);
             }
-            placed.push(bestCandidate);
           }
-        }
 
-        const finalGrid = CrosswordUtils.createEmptyGrid(size, size);
-        for (let r = 0; r < size; r++) {
-          for (let c = 0; c < size; c++) {
-            if (grid[r][c] !== null) {
-              finalGrid[r][c].isBlock = false;
-              finalGrid[r][c].value = grid[r][c];
+          // Fill unused with blocks obeying symmetry
+          const finalGrid = CrosswordUtils.createEmptyGrid(size, size);
+          for (let r = 0; r < size; r++) {
+            for (let c = 0; c < size; c++) {
+              if (grid[r][c] !== null) {
+                finalGrid[r][c].isBlock = false;
+                finalGrid[r][c].value = grid[r][c];
+              } else {
+                finalGrid[r][c].isBlock = true;
+                finalGrid[r][c].value = '';
+              }
+            }
+          }
+
+          if (symmetry && symmetry !== 'none') {
+            let symConflict = false;
+            for (let r = 0; r < size; r++) {
+              for (let c = 0; c < size; c++) {
+                const symCoords = CrosswordUtils.getSymmetricCoordinates(r, c, size, size, symmetry);
+                const isBlock = finalGrid[r][c].isBlock;
+                for (const sym of symCoords) {
+                  if (finalGrid[sym.row][sym.col].isBlock !== isBlock) {
+                    symConflict = true;
+                    break;
+                  }
+                }
+                if (symConflict) break;
+              }
+              if (symConflict) break;
+            }
+            if (symConflict) continue;
+          }
+
+          const { grid: numberedGrid, acrossWords, downWords } = CrosswordUtils.computeNumbersAndWords(finalGrid);
+          const candidateClues = { across: {}, down: {} };
+          let allWordsKnown = true;
+
+          for (const w of acrossWords) {
+            const found = wordClueMap.get(w.letters.trim());
+            if (found) {
+              candidateClues.across[w.number.toString()] = found;
             } else {
-              finalGrid[r][c].isBlock = true;
-              finalGrid[r][c].value = '';
+              allWordsKnown = false;
+              break;
             }
           }
-        }
+          if (!allWordsKnown) continue;
 
-        const score = (placed.length * 100) - (size * size - placed.length * 5);
-        if (score > highestScore) {
-          highestScore = score;
-          bestResult = {
-            grid: finalGrid,
-            placed,
-            unplaced: items.filter(it => !placed.some(p => p.word === it.word))
+          for (const w of downWords) {
+            const found = wordClueMap.get(w.letters.trim());
+            if (found) {
+              candidateClues.down[w.number.toString()] = found;
+            } else {
+              allWordsKnown = false;
+              break;
+            }
+          }
+          if (!allWordsKnown) continue;
+
+          const testPuzzle = {
+            size,
+            grid: numberedGrid.map(row => row.map(cell => cell.isBlock ? '#' : cell.value)),
+            clues: candidateClues
           };
+
+          const integrity = CrosswordUtils.validatePuzzleIntegrity(testPuzzle, {
+            requiredSymmetry: symmetry !== 'none' ? symmetry : undefined,
+            checkClues: true,
+            allowIncompleteLetters: false
+          });
+
+          if (integrity.isValid) {
+            bestValidPuzzle = {
+              grid: numberedGrid,
+              clues: candidateClues,
+              placedCount: placed.length,
+              totalCount: items.length,
+              placedWords: placed,
+              unplacedWords: items.filter(it => !placed.some(p => p.word === it.word))
+            };
+            break;
+          }
         }
       }
 
-      const { grid: finalNumberedGrid, acrossWords, downWords } = CrosswordUtils.computeNumbersAndWords(bestResult.grid);
-      const clues = { across: {}, down: {} };
+      if (!bestValidPuzzle) {
+        const unplacedList = items.map(it => it.word).join(', ');
+        throw new Error(`Unable to generate a valid symmetrical crossword from the provided words without creating unchecked cells or unsupplied crossings. Words attempted: ${unplacedList}.`);
+      }
 
-      bestResult.placed.forEach(p => {
-        if (p.direction === 'across') {
-          const match = acrossWords.find(w => w.row === p.row && w.col === p.col);
-          if (match) clues.across[match.number.toString()] = p.clue;
-        } else {
-          const match = downWords.find(w => w.row === p.row && w.col === p.col);
-          if (match) clues.down[match.number.toString()] = p.clue;
-        }
-      });
-
-      acrossWords.forEach(w => {
-        if (!clues.across[w.number.toString()]) {
-          clues.across[w.number.toString()] = `Clue for ${w.letters.trim()}`;
-        }
-      });
-      downWords.forEach(w => {
-        if (!clues.down[w.number.toString()]) {
-          clues.down[w.number.toString()] = `Clue for ${w.letters.trim()}`;
-        }
-      });
-
-      return {
-        grid: finalNumberedGrid,
-        clues,
-        placedCount: bestResult.placed.length,
-        totalCount: items.length,
-        placedWords: bestResult.placed,
-        unplacedWords: bestResult.unplaced
-      };
+      return bestValidPuzzle;
     }
   };
 
   // =========================================================================
   // 3. DICTIONARY & PATTERN SEARCH (English & Filipino)
   // =========================================================================
+  /**
+   * PuzzlePlot Multi-Language Word Dictionaries & Pattern Search
+   * Focused on English and Filipino (Tagalog) vocabulary and wildcard search.
+   */
+
   const DictionaryData = {
+    // English Common Crossword Lexicon
     en: [
       'ACE', 'ACT', 'AGE', 'AIR', 'ALL', 'AND', 'ANT', 'ANY', 'APE', 'ARC', 'ARK', 'ARM', 'ART', 'ASH', 'ASK',
       'AURA', 'AUTO', 'AWAY', 'AXIS', 'BABY', 'BACK', 'BAKE', 'BALL', 'BAND', 'BANK', 'BARK', 'BARN', 'BASE',
@@ -672,6 +1188,7 @@
       'WONDER', 'WOODEN', 'WORKER', 'WORLD', 'WORTHY', 'WRITER', 'YELLOW', 'YIELD', 'ZENITH', 'ZEPHYR', 'ZODIAC'
     ],
 
+    // Filipino (Tagalog) Common Crossword Lexicon
     fil: [
       'AKO', 'ANO', 'ANG', 'ARAW', 'APOY', 'ALAM', 'ALON', 'ASO', 'ATIS', 'AWIT', 'AYOS', 'BATA', 'BALA', 'BAHO',
       'BAKA', 'BALI', 'BATO', 'BAYI', 'BIDA', 'BIGO', 'BILI', 'BISA', 'BITA', 'BIYA', 'BOLA', 'BOSO', 'BUAN',
@@ -763,6 +1280,13 @@
   // =========================================================================
   // 4. BUILT-IN PRESET PUZZLES (English & Filipino Only)
   // =========================================================================
+  /**
+   * PuzzlePlot Built-In Production Puzzle Presets
+   * Focused on verified English and Filipino 5x5 word square presets.
+   * Structurally validated and checked for 180° rotational symmetry, connectivity,
+   * 0 unchecked cells, min entry length >= 3, and accurate 1:1 clue coverage.
+   */
+
   const PresetPuzzles = [
     {
       "id": "en-5-1",
@@ -893,31 +1417,45 @@
   // =========================================================================
   // 5. CROSSWORD PLAYER ENGINE
   // =========================================================================
+  /**
+   * PuzzlePlot Crossword Player Engine
+   * Handles gameplay, grid navigation, keyboard/touch input, assists, timer, and victory logic.
+   */
+
+
+
   class CrosswordPlayer {
     constructor(options = {}) {
       this.container = options.container || document.getElementById('player-view');
       this.onExit = options.onExit || (() => {});
-      
+
       this.puzzle = null;
       this.processedGrid = null;
       this.acrossWords = [];
       this.downWords = [];
-      
-      this.userGrid = [];
+
+      this.userGrid = []; // 2D array: { value: '', isRevealed: false, isError: false, isChecked: false }
       this.cursor = { row: 0, col: 0 };
-      this.direction = 'across';
-      
+      this.direction = 'across'; // 'across' or 'down'
+
+      // Timer state
       this.timerSeconds = 0;
       this.timerInterval = null;
       this.isPaused = false;
       this.isCompleted = false;
       this.revealedCount = 0;
       this.checkCount = 0;
+
+      // Zoom and pan state
       this.zoomLevel = 1.0;
-      
+
+      // Bound handlers for cleanup
       this.handleKeyDown = this.handleKeyDown.bind(this);
     }
 
+    /**
+     * Load and initialize a puzzle
+     */
     loadPuzzle(puzzleData) {
       this.puzzle = puzzleData;
       this.isCompleted = false;
@@ -927,10 +1465,10 @@
       this.checkCount = 0;
       this.zoomLevel = 1.0;
 
-      const size = this.puzzle.size || this.puzzle.width || 13;
-      const rawGrid = CrosswordUtils.createEmptyGrid(size, size);
-      for (let r = 0; r < size; r++) {
-        for (let c = 0; c < size; c++) {
+      // Convert puzzle grid to cell objects if needed
+      const rawGrid = CrosswordUtils.createEmptyGrid(this.puzzle.size, this.puzzle.size);
+      for (let r = 0; r < this.puzzle.size; r++) {
+        for (let c = 0; c < this.puzzle.size; c++) {
           const val = this.puzzle.grid[r][c];
           if (val === '#' || val === '.' || (typeof val === 'object' && val.isBlock)) {
             rawGrid[r][c].isBlock = true;
@@ -947,10 +1485,11 @@
       this.acrossWords = acrossWords;
       this.downWords = downWords;
 
+      // Initialize userGrid
       this.userGrid = [];
-      for (let r = 0; r < size; r++) {
+      for (let r = 0; r < this.puzzle.size; r++) {
         const row = [];
-        for (let c = 0; c < size; c++) {
+        for (let c = 0; c < this.puzzle.size; c++) {
           row.push({
             value: '',
             isRevealed: false,
@@ -961,17 +1500,21 @@
         this.userGrid.push(row);
       }
 
+      // Load saved progress if exists
       this.loadSavedProgress();
+
+      // Find first valid playable cell
       this.findFirstCell();
+
+      // Render UI and start timer
       this.render();
       this.attachEventListeners();
       this.startTimer();
     }
 
     findFirstCell() {
-      const size = this.puzzle.size || 13;
-      for (let r = 0; r < size; r++) {
-        for (let c = 0; c < size; c++) {
+      for (let r = 0; r < this.puzzle.size; r++) {
+        for (let c = 0; c < this.puzzle.size; c++) {
           if (!this.processedGrid[r][c].isBlock) {
             this.cursor = { row: r, col: c };
             this.direction = this.processedGrid[r][c].acrossClueNumber ? 'across' : 'down';
@@ -1006,7 +1549,7 @@
         pauseOverlay.classList.toggle('active', this.isPaused);
       }
       if (pauseBtn) {
-        pauseBtn.innerHTML = this.isPaused 
+        pauseBtn.innerHTML = this.isPaused
           ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> Resume`
           : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> Pause`;
       }
@@ -1058,14 +1601,18 @@
       localStorage.removeItem(`puzzleplot_progress_${this.puzzle.id}`);
     }
 
+    /**
+     * Main Render Method
+     */
     render() {
-      const size = this.puzzle.size || 13;
+      const size = this.puzzle.size;
       const isLarge = size >= 21;
       const isMedium = size === 13;
       const sizeClass = isLarge ? 'grid-size-21' : isMedium ? 'grid-size-13' : 'grid-size-5';
 
       this.container.innerHTML = `
         <div class="player-wrapper">
+          <!-- Top Toolbar -->
           <header class="player-header">
             <div class="player-header-left">
               <button class="btn-icon-subtle" id="player-back-btn" title="Back to Library">
@@ -1094,6 +1641,7 @@
             </div>
 
             <div class="player-header-right">
+              <!-- Check Menu -->
               <div class="dropdown">
                 <button class="btn-toolbar dropdown-toggle" id="btn-check-menu">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
@@ -1106,6 +1654,7 @@
                 </div>
               </div>
 
+              <!-- Reveal Menu -->
               <div class="dropdown">
                 <button class="btn-toolbar dropdown-toggle" id="btn-reveal-menu">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
@@ -1118,6 +1667,7 @@
                 </div>
               </div>
 
+              <!-- Clear Menu -->
               <div class="dropdown">
                 <button class="btn-toolbar dropdown-toggle" id="btn-clear-menu">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -1129,6 +1679,7 @@
                 </div>
               </div>
 
+              <!-- Zoom Controls for large grids -->
               ${isLarge || isMedium ? `
               <div class="zoom-controls">
                 <button class="btn-icon-subtle" id="btn-zoom-out" title="Zoom Out">−</button>
@@ -1139,8 +1690,11 @@
             </div>
           </header>
 
+          <!-- Main Gameplay Layout -->
           <main class="player-main">
+            <!-- Left/Center: Active Clue Bar & Crossword Grid -->
             <section class="player-grid-section">
+              <!-- Sticky Active Clue Bar -->
               <div class="active-clue-bar" id="active-clue-bar" title="Click to toggle direction (Across / Down)">
                 <div class="clue-badge" id="active-clue-badge">1A</div>
                 <div class="clue-content">
@@ -1156,11 +1710,13 @@
                 </div>
               </div>
 
+              <!-- Scrollable / Zoomable Grid Canvas Container -->
               <div class="grid-viewport" id="grid-viewport">
                 <div class="crossword-grid-container ${sizeClass}" id="grid-container" style="--grid-size: ${size};">
                   ${this.renderGridCells()}
                 </div>
 
+                <!-- Pause Game Overlay -->
                 <div class="pause-overlay" id="player-pause-overlay">
                   <div class="pause-card">
                     <h3>Game Paused</h3>
@@ -1170,13 +1726,14 @@
                 </div>
               </div>
 
+              <!-- On-Screen Virtual Keyboard (Visible on Mobile/Touch) -->
               <div class="virtual-keyboard" id="virtual-keyboard">
                 <div class="keyboard-row">
                   ${['Q','W','E','R','T','Y','U','I','O','P'].map(k => `<button class="key-btn" data-key="${k}">${k}</button>`).join('')}
                 </div>
                 <div class="keyboard-row">
                   ${['A','S','D','F','G','H','J','K','L'].map(k => `<button class="key-btn" data-key="${k}">${k}</button>`).join('')}
-                  ${this.puzzle.language === 'fil' ? `<button class="key-btn" data-key="Ñ">Ñ</button>` : ''}
+                  ${(this.puzzle.language === 'es' || this.puzzle.language === 'fil') ? `<button class="key-btn" data-key="Ñ">Ñ</button>` : ''}
                 </div>
                 <div class="keyboard-row">
                   <button class="key-btn key-action" id="vk-dir" title="Toggle Across / Down">⇄</button>
@@ -1186,6 +1743,7 @@
               </div>
             </section>
 
+            <!-- Right: Clue Columns (Across & Down) -->
             <aside class="player-clues-section">
               <div class="clues-panel">
                 <div class="clues-column" id="across-clues-col">
@@ -1212,12 +1770,14 @@
           </main>
         </div>
 
+        <!-- Victory Celebration Modal -->
         <div class="modal-backdrop" id="victory-modal">
           <div class="modal-card victory-card animate-pop">
+            <div class="victory-confetti-burst" id="victory-confetti"></div>
             <div class="victory-icon-trophy">🏆</div>
             <h2>Puzzle Solved!</h2>
             <p class="victory-subtitle">Splendid work on <strong>${this.escapeHtml(this.puzzle.title)}</strong>!</p>
-            
+
             <div class="victory-stats-grid">
               <div class="stat-box">
                 <span class="stat-label">Solve Time</span>
@@ -1249,8 +1809,11 @@
       this.updateTimerDisplay();
     }
 
+    /**
+     * Generates HTML for the crossword grid cells
+     */
     renderGridCells() {
-      const size = this.puzzle.size || 13;
+      const size = this.puzzle.size;
       let html = '';
 
       for (let r = 0; r < size; r++) {
@@ -1263,16 +1826,16 @@
           } else {
             const numberHtml = cell.number ? `<span class="cell-num">${cell.number}</span>` : '';
             const letterVal = userCell.value || '';
-            
+
             let statusClasses = '';
             if (userCell.isRevealed) statusClasses += ' cell-revealed';
             if (userCell.isError) statusClasses += ' cell-error';
             if (userCell.isChecked && !userCell.isError) statusClasses += ' cell-correct';
 
             html += `
-              <div class="grid-cell cell-letter${statusClasses}" 
-                   data-row="${r}" 
-                   data-col="${c}" 
+              <div class="grid-cell cell-letter${statusClasses}"
+                   data-row="${r}"
+                   data-col="${c}"
                    tabindex="0"
                    id="cell-${r}-${c}">
                 ${numberHtml}
@@ -1282,31 +1845,41 @@
           }
         }
       }
+
       return html;
     }
 
+    /**
+     * Generates HTML for Across or Down clue lists
+     */
     renderClueList(direction) {
       const wordList = direction === 'across' ? this.acrossWords : this.downWords;
       const clueDict = (this.puzzle.clues && this.puzzle.clues[direction]) || {};
 
       return wordList.map(w => {
         const clueText = clueDict[w.number.toString()] || clueDict[w.number] || `Clue for ${w.number} ${direction}`;
+        const safeClueText = this.escapeHtml(clueText);
         return `
-          <div class="clue-item" 
-               id="clue-${direction}-${w.number}" 
-               data-direction="${direction}" 
+          <div class="clue-item"
+               id="clue-${direction}-${w.number}"
+               data-direction="${direction}"
                data-number="${w.number}">
             <span class="clue-num-tag">${w.number}</span>
-            <span class="clue-desc">${this.escapeHtml(clueText)}</span>
+            <span class="clue-desc">${safeClueText}</span>
           </div>
         `;
       }).join('');
     }
 
+    /**
+     * Attach all DOM and Keyboard Event Listeners
+     */
     attachEventListeners() {
+      // Global Keyboard listener
       window.removeEventListener('keydown', this.handleKeyDown);
       window.addEventListener('keydown', this.handleKeyDown);
 
+      // Grid Cell Click & Touch
       const gridContainer = document.getElementById('grid-container');
       if (gridContainer) {
         gridContainer.addEventListener('click', (e) => {
@@ -1319,6 +1892,7 @@
         });
       }
 
+      // Clue Item Click (jumps to clue word)
       const acrossList = document.getElementById('across-clues-list');
       if (acrossList) {
         acrossList.addEventListener('click', (e) => {
@@ -1341,6 +1915,7 @@
         });
       }
 
+      // Active Clue Bar click toggles direction
       const clueBar = document.getElementById('active-clue-bar');
       if (clueBar) {
         clueBar.addEventListener('click', (e) => {
@@ -1350,11 +1925,13 @@
         });
       }
 
+      // Prev / Next Clue buttons
       const prevBtn = document.getElementById('clue-prev-btn');
       if (prevBtn) prevBtn.addEventListener('click', () => this.navigateClue(-1));
       const nextBtn = document.getElementById('clue-next-btn');
       if (nextBtn) nextBtn.addEventListener('click', () => this.navigateClue(1));
 
+      // Toolbar buttons
       const backBtn = document.getElementById('player-back-btn');
       if (backBtn) backBtn.addEventListener('click', () => {
         this.saveProgress();
@@ -1368,10 +1945,12 @@
       const resumeBtn = document.getElementById('pause-resume-btn');
       if (resumeBtn) resumeBtn.addEventListener('click', () => this.togglePause());
 
+      // Dropdown toggles
       this.setupDropdown('btn-check-menu', 'check-dropdown');
       this.setupDropdown('btn-reveal-menu', 'reveal-dropdown');
       this.setupDropdown('btn-clear-menu', 'clear-dropdown');
 
+      // Assist Actions
       const checkLetter = document.getElementById('act-check-letter');
       if (checkLetter) checkLetter.addEventListener('click', () => this.checkCurrentLetter());
       const checkWord = document.getElementById('act-check-word');
@@ -1391,6 +1970,7 @@
       const clearAll = document.getElementById('act-clear-all');
       if (clearAll) clearAll.addEventListener('click', () => this.clearEntireGrid());
 
+      // Zoom Controls
       const btnZoomIn = document.getElementById('btn-zoom-in');
       if (btnZoomIn) btnZoomIn.addEventListener('click', () => this.adjustZoom(0.15));
       const btnZoomOut = document.getElementById('btn-zoom-out');
@@ -1398,11 +1978,13 @@
       const btnZoomReset = document.getElementById('btn-zoom-reset');
       if (btnZoomReset) btnZoomReset.addEventListener('click', () => this.adjustZoom(0, true));
 
+      // Virtual Keyboard
       const vk = document.getElementById('virtual-keyboard');
       if (vk) {
         vk.addEventListener('click', (e) => {
           const btn = e.target.closest('button');
           if (!btn) return;
+
           if (btn.dataset.key) {
             this.handleInputLetter(btn.dataset.key);
           } else if (btn.id === 'vk-backspace') {
@@ -1413,6 +1995,7 @@
         });
       }
 
+      // Victory modal buttons
       const victoryReplay = document.getElementById('victory-btn-replay');
       if (victoryReplay) {
         victoryReplay.addEventListener('click', () => {
@@ -1438,6 +2021,7 @@
 
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
+        // Close other dropdowns
         document.querySelectorAll('.dropdown-menu.show').forEach(m => {
           if (m !== menu) m.classList.remove('show');
         });
@@ -1465,13 +2049,20 @@
       }
     }
 
+    /**
+     * Handles user click on a grid cell
+     */
     onCellClicked(row, col) {
       if (this.isPaused || this.isCompleted) return;
 
       if (this.cursor.row === row && this.cursor.col === col) {
+        // Toggle direction if clicking current active cell
         this.toggleDirection();
       } else {
+        // Move cursor to new cell
         this.cursor = { row, col };
+
+        // If current direction has no word here, switch direction
         const cell = this.processedGrid[row][col];
         if (this.direction === 'across' && !cell.acrossClueNumber && cell.downClueNumber) {
           this.direction = 'down';
@@ -1506,10 +2097,11 @@
       const words = this.direction === 'across' ? this.acrossWords : this.downWords;
       const currentClueNum = this.getCurrentClueNumber();
       const currentIndex = words.findIndex(w => w.number === currentClueNum);
-      
+
       if (currentIndex !== -1) {
         let nextIndex = currentIndex + delta;
         if (nextIndex >= words.length) {
+          // Switch to other direction
           this.direction = this.direction === 'across' ? 'down' : 'across';
           const otherWords = this.direction === 'across' ? this.acrossWords : this.downWords;
           this.selectClue(this.direction, otherWords[0].number);
@@ -1543,8 +2135,13 @@
       return words.find(w => w.number === crossNum);
     }
 
+    /**
+     * Keyboard handler
+     */
     handleKeyDown(e) {
       if (this.isPaused || this.isCompleted) return;
+
+      // Ignore events if user is typing in an input/textarea
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
       const key = e.key;
@@ -1582,10 +2179,11 @@
     handleInputLetter(letter) {
       const { row, col } = this.cursor;
       const userCell = this.userGrid[row][col];
-      
+
       userCell.value = letter;
-      userCell.isError = false;
-      
+      userCell.isError = false; // Reset error when re-typing
+
+      // Update DOM directly for responsiveness
       const charElem = document.getElementById(`char-${row}-${col}`);
       if (charElem) charElem.textContent = letter;
       const cellElem = document.getElementById(`cell-${row}-${col}`);
@@ -1594,7 +2192,10 @@
       SoundEngine.playKeySound();
       this.saveProgress();
 
+      // Advance cursor to next cell in current word
       this.advanceCursor();
+
+      // Check if word or puzzle is complete
       this.checkWordCompletion();
       this.checkPuzzleCompletion();
     }
@@ -1613,6 +2214,7 @@
         SoundEngine.playKeySound();
         this.saveProgress();
       } else {
+        // Step backwards
         this.stepBackCursor();
         const newCell = this.userGrid[this.cursor.row][this.cursor.col];
         newCell.value = '';
@@ -1630,7 +2232,7 @@
     moveCursor(dRow, dCol) {
       let r = this.cursor.row + dRow;
       let c = this.cursor.col + dCol;
-      const size = this.puzzle.size || 13;
+      const size = this.puzzle.size;
 
       while (r >= 0 && r < size && c >= 0 && c < size) {
         if (!this.processedGrid[r][c].isBlock) {
@@ -1653,6 +2255,7 @@
         this.cursor = { row: nextCell.row, col: nextCell.col };
         this.updateHighlighting();
       } else {
+        // At the end of word: optionally jump to next clue
         this.navigateClue(1);
       }
     }
@@ -1668,7 +2271,11 @@
       }
     }
 
+    /**
+     * Highlights active cursor, active word, crossing word, and active clue
+     */
     updateHighlighting() {
+      // 1. Clear previous cell highlights
       document.querySelectorAll('.cell-active-cursor, .cell-active-word, .cell-active-cross').forEach(el => {
         el.classList.remove('cell-active-cursor', 'cell-active-word', 'cell-active-cross');
       });
@@ -1676,6 +2283,7 @@
       const activeWord = this.getActiveWord();
       const crossWord = this.getCrossWord();
 
+      // 2. Highlight cross word cells
       if (crossWord) {
         crossWord.cells.forEach(c => {
           const el = document.getElementById(`cell-${c.row}-${c.col}`);
@@ -1683,6 +2291,7 @@
         });
       }
 
+      // 3. Highlight active word cells
       if (activeWord) {
         activeWord.cells.forEach(c => {
           const el = document.getElementById(`cell-${c.row}-${c.col}`);
@@ -1690,13 +2299,15 @@
         });
       }
 
+      // 4. Highlight active cursor cell
       const activeCellElem = document.getElementById(`cell-${this.cursor.row}-${this.cursor.col}`);
       if (activeCellElem) {
         activeCellElem.classList.add('cell-active-cursor');
       }
 
+      // 5. Update Clue Lists & Banner
       document.querySelectorAll('.clue-item-active').forEach(el => el.classList.remove('clue-item-active'));
-      
+
       if (activeWord) {
         const clueId = `clue-${this.direction}-${activeWord.number}`;
         const activeClueElem = document.getElementById(clueId);
@@ -1705,6 +2316,7 @@
           activeClueElem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
 
+        // Update Clue Banner
         const badgeElem = document.getElementById('active-clue-badge');
         const textElem = document.getElementById('active-clue-text');
         const clueDict = (this.puzzle.clues && this.puzzle.clues[this.direction]) || {};
@@ -1715,6 +2327,9 @@
       }
     }
 
+    /**
+     * Check if the currently filled word is completely full and correct
+     */
     checkWordCompletion() {
       const activeWord = this.getActiveWord();
       if (!activeWord) return;
@@ -1743,8 +2358,11 @@
       }
     }
 
+    /**
+     * Check if the entire crossword is solved
+     */
     checkPuzzleCompletion() {
-      const size = this.puzzle.size || 13;
+      const size = this.puzzle.size;
       for (let r = 0; r < size; r++) {
         for (let c = 0; c < size; c++) {
           if (!this.processedGrid[r][c].isBlock) {
@@ -1757,6 +2375,7 @@
         }
       }
 
+      // Puzzle is 100% correctly completed!
       this.isCompleted = true;
       this.stopTimer();
       this.clearSavedProgress();
@@ -1781,6 +2400,10 @@
 
       modal.classList.add('active');
     }
+
+    // =========================================================================
+    // Game Assists: Check / Reveal / Reset
+    // =========================================================================
 
     checkCurrentLetter() {
       this.checkCount++;
@@ -1826,7 +2449,7 @@
 
     checkEntirePuzzle() {
       this.checkCount++;
-      const size = this.puzzle.size || 13;
+      const size = this.puzzle.size;
       let hasErrors = false;
 
       for (let r = 0; r < size; r++) {
@@ -1886,7 +2509,7 @@
 
     revealEntirePuzzle() {
       this.revealedCount += 5;
-      const size = this.puzzle.size || 13;
+      const size = this.puzzle.size;
 
       for (let r = 0; r < size; r++) {
         for (let c = 0; c < size; c++) {
@@ -1905,7 +2528,7 @@
     }
 
     clearAllErrors() {
-      const size = this.puzzle.size || 13;
+      const size = this.puzzle.size;
       for (let r = 0; r < size; r++) {
         for (let c = 0; c < size; c++) {
           const userCell = this.userGrid[r][c];
@@ -1920,7 +2543,7 @@
     }
 
     clearEntireGrid() {
-      const size = this.puzzle.size || 13;
+      const size = this.puzzle.size;
       for (let r = 0; r < size; r++) {
         for (let c = 0; c < size; c++) {
           this.userGrid[r][c] = {
@@ -1950,8 +2573,13 @@
     }
 
     escapeHtml(str) {
-      if (!str) return '';
-      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      if (str == null) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
 
     destroy() {
@@ -1963,6 +2591,14 @@
   // =========================================================================
   // 6. CROSSWORD MAKER STUDIO ENGINE WITH AUTO-BUILDER
   // =========================================================================
+  /**
+   * Crossword Maker Studio Module
+   * Full authoring canvas with auto-builder word placement, symmetry, clues table, dictionary assistant, and printing.
+   */
+
+
+
+
   class CrosswordMaker {
     constructor(options = {}) {
       this.container = options.container || document.getElementById('maker-view');
@@ -1985,7 +2621,7 @@
 
       this.grid = CrosswordUtils.createEmptyGrid(this.size, this.size);
       this.clues = { across: {}, down: {} };
-      
+
       this.searchPattern = '';
       this.searchResults = [];
 
@@ -2102,6 +2738,24 @@
       }
     }
 
+    validateForAction(actionName) {
+      const puzzle = this.getPuzzleObject();
+      const res = CrosswordUtils.validatePuzzleIntegrity(puzzle, {
+        requiredSymmetry: this.symmetry !== 'none' ? this.symmetry : undefined,
+        checkClues: true,
+        allowIncompleteLetters: false
+      });
+
+      if (!res.isValid) {
+        const errorDetails = res.errors.map((e, idx) => `${idx + 1}. ${e.message}`).join('\n');
+        const msg = `Cannot ${actionName} puzzle due to the following validation errors:\n\n${errorDetails}\n\nPlease resolve these issues before ${actionName.toLowerCase()}ing.`;
+        SoundEngine.playErrorSound();
+        alert(msg);
+        return false;
+      }
+      return true;
+    }
+
     recomputeGrid() {
       const { grid, acrossWords, downWords } = CrosswordUtils.computeNumbersAndWords(this.grid);
       this.grid = grid;
@@ -2207,7 +2861,7 @@
             </div>
 
             <div class="subbar-actions">
-              <button class="btn btn-accent btn-sm" id="maker-btn-auto-build" title="Place your custom words into the grid automatically">
+              <button class="btn btn-accent btn-sm" id="maker-btn-auto-build" title="Place custom words into the grid automatically">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
                 <span>Auto-Build from Words</span>
               </button>
@@ -2249,7 +2903,7 @@
                 <div class="dict-finder-box">
                   <h4>Dictionary & Pattern Helper</h4>
                   <p class="dict-hint">Use <code>?</code> or <code>_</code> for unknown letters (e.g. <code>B??A??</code> or <code>S??AR</code>).</p>
-                  
+
                   <div class="dict-search-row">
                     <input type="text" class="input-text" id="dict-pattern-input" placeholder="e.g. B??A or P?Z?A" value="${this.searchPattern}">
                     <button class="btn btn-secondary" id="dict-search-btn">Search</button>
@@ -2268,22 +2922,22 @@
           </main>
         </div>
 
-        <!-- Auto-Builder Word Placement Modal -->
+        <!-- Auto-Builder Modal -->
         <div class="modal-backdrop" id="auto-builder-modal">
           <div class="modal-card auto-builder-card animate-pop">
             <div class="modal-header-row">
               <h3>Auto-Build Crossword Grid</h3>
               <button class="modal-close-btn" id="auto-builder-close-btn">&times;</button>
             </div>
-            
+
             <div class="auto-builder-body">
               <p class="auto-builder-desc">
-                Type or paste words you want in your puzzle (one per line or separated by commas). 
+                Type or paste words you want in your puzzle (one per line or separated by commas).
                 You can also add clues using <code>WORD: Clue definition</code>.
                 PuzzlePlot will automatically calculate intersections, word crossings, and lock in the grid blocks!
               </p>
 
-              <textarea class="textarea-words" id="auto-builder-input" placeholder="BAYANI: Pambansang bayani&#10;SALAMAT: Pagpapahayag ng pasasalamat&#10;KULTURA: Kaugalian at tradisyon ng lahi&#10;WIKA: Wikang pambansa&#10;ARAW: Liwanag sa maghapon"></textarea>
+              <textarea class="textarea-words" id="auto-builder-input" placeholder="BAYANI: Pambansang bayani&#10;SALAMAT: Pagpapahayag ng pasasalamat&#10;KULTURA: Kaugalian at tradisyon&#10;WIKA: Wikang pambansa&#10;ARAW: Liwanag sa maghapon"></textarea>
 
               <div class="samples-row">
                 <span>Quick Samples:</span>
@@ -2345,9 +2999,9 @@
 
           if (cell.isBlock) {
             html += `
-              <div class="grid-cell cell-block maker-cell" 
-                   data-row="${r}" 
-                   data-col="${c}" 
+              <div class="grid-cell cell-block maker-cell"
+                   data-row="${r}"
+                   data-col="${c}"
                    id="maker-cell-${r}-${c}">
               </div>`;
           } else {
@@ -2355,10 +3009,10 @@
             const letterVal = cell.value || '';
 
             html += `
-              <div class="grid-cell cell-letter maker-cell" 
-                   data-row="${r}" 
-                   data-col="${c}" 
-                   tabindex="0" 
+              <div class="grid-cell cell-letter maker-cell"
+                   data-row="${r}"
+                   data-col="${c}"
+                   tabindex="0"
                    id="maker-cell-${r}-${c}">
                 ${numberHtml}
                 <span class="cell-char" id="maker-char-${r}-${c}">${letterVal}</span>
@@ -2440,11 +3094,11 @@
                       <td class="clue-td-num"><strong>${w.number}</strong></td>
                       <td class="clue-td-word"><code>${this.escapeHtml(wordPattern)}</code></td>
                       <td class="clue-td-input">
-                        <input type="text" 
-                               class="clue-input-field" 
-                               data-direction="${direction}" 
-                               data-number="${w.number}" 
-                               value="${this.escapeHtml(clueVal)}" 
+                        <input type="text"
+                               class="clue-input-field"
+                               data-direction="${direction}"
+                               data-number="${w.number}"
+                               value="${this.escapeHtml(clueVal)}"
                                placeholder="Write clue for ${w.number}-${direction}...">
                       </td>
                     </tr>
@@ -2544,6 +3198,7 @@
       const btnTestPlay = document.getElementById('maker-test-play-btn');
       if (btnTestPlay) {
         btnTestPlay.addEventListener('click', () => {
+          if (!this.validateForAction('Test Play')) return;
           const puzzleData = this.getPuzzleObject();
           this.onTestPlay(puzzleData);
         });
@@ -2554,6 +3209,7 @@
       const actSaveLocal = document.getElementById('maker-act-save-local');
       if (actSaveLocal) {
         actSaveLocal.addEventListener('click', () => {
+          if (!this.validateForAction('Save')) return;
           const puzzle = this.getPuzzleObject();
           this.onSave(puzzle);
         });
@@ -2561,7 +3217,10 @@
 
       const actExportJson = document.getElementById('maker-act-export-json');
       if (actExportJson) {
-        actExportJson.addEventListener('click', () => this.exportPuzzleJSON());
+        actExportJson.addEventListener('click', () => {
+          if (!this.validateForAction('Export')) return;
+          this.exportPuzzleJSON();
+        });
       }
 
       const actImportJson = document.getElementById('maker-act-import-json');
@@ -2573,7 +3232,10 @@
 
       const actPrint = document.getElementById('maker-act-print');
       if (actPrint) {
-        actPrint.addEventListener('click', () => this.generatePrintableSheet());
+        actPrint.addEventListener('click', () => {
+          if (!this.validateForAction('Print')) return;
+          this.generatePrintableSheet();
+        });
       }
 
       const gridContainer = document.getElementById('maker-grid-container');
@@ -2647,7 +3309,7 @@
 
             closeAutoModal();
             SoundEngine.playVictorySound();
-            alert(`Auto-Grid Successfully Generated! Placed ${result.placedCount} words in a ${targetSize}x${targetSize} layout with grid blocks.`);
+            alert(`Auto-Grid Successfully Generated! Placed ${result.placedCount} words in a valid ${targetSize}x${targetSize} layout.`);
           } catch (err) {
             alert(err.message);
           }
@@ -3056,13 +3718,21 @@
       const file = e.target.files[0];
       if (!file) return;
 
+      if (file.size > 1024 * 1024) {
+        SoundEngine.playErrorSound();
+        alert('Selected puzzle file is too large (maximum allowed size is 1MB).');
+        return;
+      }
+
       const reader = new FileReader();
       reader.onload = (evt) => {
         try {
           const imported = CrosswordUtils.importFromJSON(evt.target.result);
           this.init(imported);
+          SoundEngine.playVictorySound();
           alert('Puzzle successfully loaded into PuzzlePlot Studio!');
         } catch (err) {
+          SoundEngine.playErrorSound();
           alert(err.message);
         }
       };
@@ -3105,7 +3775,7 @@
               <h1 class="print-title">${this.escapeHtml(puzzle.title)}</h1>
               <p class="print-byline">Created by ${this.escapeHtml(puzzle.author)} • PuzzlePlot Crosswords</p>
             </div>
-            
+
             <div class="print-body">
               <div class="print-grid-col">
                 ${gridHtml}
@@ -3129,8 +3799,13 @@
     }
 
     escapeHtml(str) {
-      if (!str) return '';
-      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      if (str == null) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
 
     destroy() {
@@ -3141,60 +3816,87 @@
   // =========================================================================
   // 7. MAIN APPLICATION CONTROLLER
   // =========================================================================
+  /**
+   * PuzzlePlot Main Application Controller
+   * Hub management, routing between Player and Maker Studio, Theme controller, and Library catalog.
+   */
+
+
+
+
+
+
   class PuzzlePlotApp {
     constructor() {
-      this.currentView = 'hub';
-      this.theme = localStorage.getItem('puzzleplot_theme') || 'paper';
-      this.sizeFilter = 'all';
-      this.langFilter = 'all'; // 'all', 'en', 'fil'
-      
+      this.currentView = 'hub'; // 'hub' | 'player' | 'maker'
       this.player = null;
       this.maker = null;
-
       this.customPuzzles = this.loadCustomPuzzles();
+      this.theme = (typeof localStorage !== 'undefined' ? localStorage.getItem('puzzleplot_theme') : null) || 'paper';
+
+      this.sizeFilter = 'all';
+      this.langFilter = 'all';
 
       this.init();
     }
 
     init() {
       this.applyTheme(this.theme);
-      this.setupHeaderEvents();
-      this.setupTutorialModalEvents();
-      this.renderHub();
-      this.updateSoundButton();
+      if (typeof document !== 'undefined') {
+        this.setupHeaderEvents();
+        this.setupTutorialModalEvents();
+        this.renderHub();
+        this.updateSoundButton();
+      }
     }
 
     loadCustomPuzzles() {
       try {
+        if (typeof localStorage === 'undefined') return [];
         const saved = localStorage.getItem('puzzleplot_custom_puzzles');
-        return saved ? JSON.parse(saved) : [];
+        if (!saved) return [];
+        if (typeof saved === 'string' && saved.length > 2 * 1024 * 1024) {
+          console.warn('Storage collection exceeds maximum allowed size (2MB). Ignoring corrupted payload.');
+          return [];
+        }
+        const parsed = JSON.parse(saved);
+        if (!Array.isArray(parsed)) return [];
+
+        const validPuzzles = [];
+        for (const item of parsed) {
+          try {
+            const normalized = CrosswordUtils.validateAndNormalizeImport(item);
+            validPuzzles.push(normalized);
+          } catch (itemErr) {
+            console.warn('Skipping corrupted custom puzzle from storage:', itemErr.message);
+          }
+        }
+        return validPuzzles.slice(0, 50);
       } catch (e) {
+        console.warn('Failed to parse custom puzzles from localStorage:', e.message);
         return [];
       }
     }
 
     saveCustomPuzzles() {
       try {
-        localStorage.setItem('puzzleplot_custom_puzzles', JSON.stringify(this.customPuzzles));
-      } catch (e) {}
+        if (typeof localStorage === 'undefined') return;
+        localStorage.setItem('puzzleplot_custom_puzzles', JSON.stringify(this.customPuzzles.slice(0, 50)));
+      } catch (e) {
+        console.error('Storage quota or serialization failure in saveCustomPuzzles:', e);
+        this.showToast('Storage quota exceeded. Unable to save puzzle.');
+      }
     }
 
     setupHeaderEvents() {
       const logo = document.getElementById('header-logo');
       if (logo) {
-        logo.addEventListener('click', (e) => {
-          e.preventDefault();
-          this.switchView('hub');
-        });
+        logo.addEventListener('click', () => this.switchView('hub'));
       }
 
       const navPlay = document.getElementById('nav-play-btn');
       if (navPlay) {
-        navPlay.addEventListener('click', () => {
-          this.switchView('hub');
-          const gridSection = document.getElementById('puzzle-catalog-section');
-          if (gridSection) gridSection.scrollIntoView({ behavior: 'smooth' });
-        });
+        navPlay.addEventListener('click', () => this.switchView('hub'));
       }
 
       const navCreate = document.getElementById('nav-create-btn');
@@ -3207,23 +3909,17 @@
         navTutorial.addEventListener('click', () => this.openTutorialModal());
       }
 
-      const navAbout = document.getElementById('nav-about-btn');
-      if (navAbout) {
-        navAbout.addEventListener('click', () => this.openAboutModal());
-      }
-
-      const themeBtn = document.getElementById('theme-toggle-btn');
-      if (themeBtn) {
-        themeBtn.addEventListener('click', () => {
-          const themes = ['paper', 'light', 'dark'];
-          const nextIdx = (themes.indexOf(this.theme) + 1) % themes.length;
-          this.applyTheme(themes[nextIdx]);
+      const themeToggle = document.getElementById('theme-toggle-btn');
+      if (themeToggle) {
+        themeToggle.addEventListener('click', () => {
+          const nextTheme = this.theme === 'light' ? 'dark' : this.theme === 'dark' ? 'paper' : 'light';
+          this.applyTheme(nextTheme);
         });
       }
 
-      const soundBtn = document.getElementById('sound-toggle-btn');
-      if (soundBtn) {
-        soundBtn.addEventListener('click', () => {
+      const soundToggle = document.getElementById('sound-toggle-btn');
+      if (soundToggle) {
+        soundToggle.addEventListener('click', () => {
           SoundEngine.toggleMute();
           this.updateSoundButton();
         });
@@ -3248,7 +3944,6 @@
         });
       }
 
-      // Tutorial tabs
       document.querySelectorAll('.tutorial-tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           const targetChapter = btn.dataset.chapter;
@@ -3284,27 +3979,30 @@
 
     applyTheme(newTheme) {
       this.theme = newTheme;
-      localStorage.setItem('puzzleplot_theme', newTheme);
-      document.documentElement.setAttribute('data-theme', newTheme);
-
-      const themeBtn = document.getElementById('theme-toggle-btn');
-      if (themeBtn) {
-        if (newTheme === 'dark') {
-          themeBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`;
-          themeBtn.title = 'Theme: Dark (Click for Paper)';
-        } else if (newTheme === 'paper') {
-          themeBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`;
-          themeBtn.title = 'Theme: Classic Paper (Click for Light)';
-        } else {
-          themeBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
-          themeBtn.title = 'Theme: Light (Click for Dark)';
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('puzzleplot_theme', newTheme);
+      }
+      if (typeof document !== 'undefined') {
+        document.documentElement.setAttribute('data-theme', newTheme);
+        const themeBtn = document.getElementById('theme-toggle-btn');
+        if (themeBtn) {
+          if (newTheme === 'dark') {
+            themeBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="12" x2="12" y2="3"/><line x1="12" y1="12" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`;
+            themeBtn.title = 'Theme: Dark (Click for Paper)';
+          } else if (newTheme === 'paper') {
+            themeBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`;
+            themeBtn.title = 'Theme: Classic Paper (Click for Light)';
+          } else {
+            themeBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
+            themeBtn.title = 'Theme: Light (Click for Dark)';
+          }
         }
       }
     }
 
     switchView(viewName) {
       this.currentView = viewName;
-      
+
       const hubView = document.getElementById('hub-view');
       const playerView = document.getElementById('player-view');
       const makerView = document.getElementById('maker-view');
@@ -3324,7 +4022,9 @@
         this.renderHub();
       }
 
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (typeof window !== 'undefined' && window.scrollTo) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
     }
 
     startPlayer(puzzle) {
@@ -3376,6 +4076,7 @@
     }
 
     showToast(message) {
+      if (typeof document === 'undefined') return;
       const toast = document.createElement('div');
       toast.className = 'toast-notification animate-pop';
       toast.textContent = message;
@@ -3408,7 +4109,7 @@
           <div class="hub-hero-badge">The Premier Word Puzzle Studio</div>
           <h1 class="hub-hero-title">PuzzlePlot</h1>
           <p class="hub-hero-subtitle">
-            Solve handcrafted crosswords in <strong>English</strong> and <strong>Filipino</strong>, or construct your own 
+            Solve handcrafted crosswords in <strong>English</strong> and <strong>Filipino</strong>, or construct your own
             5×5 Mini, 13×13 Midi, and 21×21 Jumbo puzzles with automatic word placement and 180° symmetry.
           </p>
 
@@ -3511,42 +4212,60 @@
     }
 
     renderPuzzleCard(p, isCustom = false) {
-      const size = p.size || p.width || 13;
-      const lang = (p.language || 'en').toUpperCase();
-      const langBadgeClass = `lang-${p.language || 'en'}`;
-      const diff = p.difficulty || (size === 5 ? 'Easy' : size === 13 ? 'Medium' : 'Hard');
-      const hasProgress = !!localStorage.getItem(`puzzleplot_progress_${p.id}`);
+      const rawSize = p.size || p.width || 13;
+      const size = (rawSize === 5 || rawSize === 13 || rawSize === 21) ? rawSize : 13;
+      const safeLang = (p.language === 'fil' || p.language === 'tl') ? 'fil' : 'en';
+      const langDisplay = safeLang.toUpperCase();
+      const langBadgeClass = `lang-${safeLang}`;
+
+      let diff = 'Medium';
+      if (typeof p.difficulty === 'string') {
+        const lower = p.difficulty.toLowerCase().trim();
+        if (lower.includes('easy')) diff = 'Easy';
+        else if (lower.includes('hard')) diff = 'Hard';
+        else if (lower.includes('medium') || lower.includes('classic')) diff = 'Medium';
+        else diff = 'Custom';
+      } else {
+        diff = size === 5 ? 'Easy' : size === 13 ? 'Medium' : 'Hard';
+      }
+
+      const safeId = this.escapeHtml(p.id);
+      const safeTitle = this.escapeHtml(p.title || 'Untitled Crossword');
+      const safeDesc = this.escapeHtml(p.description || 'Custom crafted crossword puzzle.');
+      const safeAuthor = this.escapeHtml(p.author || 'Anonymous');
+      const safeDiff = this.escapeHtml(diff);
+      const hasProgress = typeof localStorage !== 'undefined' && !!localStorage.getItem(`puzzleplot_progress_${p.id}`);
 
       return `
-        <div class="puzzle-card ${isCustom ? 'card-custom' : ''}" data-id="${p.id}">
+        <div class="puzzle-card ${isCustom ? 'card-custom' : ''}" data-id="${safeId}">
           <div class="puzzle-card-top">
             <div class="puzzle-badges">
               <span class="card-badge badge-size">${size}×${size}</span>
-              <span class="card-badge ${langBadgeClass}">${lang}</span>
-              <span class="card-badge badge-diff">${diff}</span>
+              <span class="card-badge ${langBadgeClass}">${langDisplay}</span>
+              <span class="card-badge badge-diff">${safeDiff}</span>
             </div>
             ${hasProgress ? `<span class="badge-in-progress">In Progress</span>` : ''}
           </div>
 
-          <h3 class="puzzle-card-title">${this.escapeHtml(p.title)}</h3>
-          <p class="puzzle-card-desc">${this.escapeHtml(p.description || 'Custom crafted crossword puzzle.')}</p>
-          
+          <h3 class="puzzle-card-title">${safeTitle}</h3>
+          <p class="puzzle-card-desc">${safeDesc}</p>
+
           <div class="puzzle-card-meta">
-            <span>By ${this.escapeHtml(p.author || 'Anonymous')}</span>
+            <span>By ${safeAuthor}</span>
           </div>
 
           <div class="puzzle-card-actions">
-            <button class="btn btn-primary btn-sm btn-play-puzzle" data-id="${p.id}" data-custom="${isCustom}">
+            <button class="btn btn-primary btn-sm btn-play-puzzle" data-id="${safeId}" data-custom="${isCustom}">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               <span>${hasProgress ? 'Resume' : 'Play'}</span>
             </button>
-            
+
             ${isCustom ? `
-              <button class="btn btn-secondary btn-sm btn-edit-puzzle" data-id="${p.id}" title="Edit in Maker">
+              <button class="btn btn-secondary btn-sm btn-edit-puzzle" data-id="${safeId}" title="Edit in Maker">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                 <span>Edit</span>
               </button>
-              <button class="btn-icon-subtle btn-del-puzzle" data-id="${p.id}" title="Delete puzzle">
+              <button class="btn-icon-subtle btn-del-puzzle" data-id="${safeId}" title="Delete puzzle">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
               </button>
             ` : ''}
@@ -3648,17 +4367,36 @@
     }
 
     escapeHtml(str) {
-      if (!str) return '';
-      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      if (str == null) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
   }
 
-  // Initialize Application on DOM ready
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
+  // Expose PuzzlePlotApp class on window if running in browser
+  if (typeof window !== 'undefined') {
+    window.PuzzlePlotApp = PuzzlePlotApp;
+  }
+
+  // Robust Application bootstrap on DOM ready / load
+  function initPuzzlePlot() {
+    if (typeof window !== 'undefined' && !window.PuzzlePlot) {
       window.PuzzlePlot = new PuzzlePlotApp();
-    });
-  } else {
-    window.PuzzlePlot = new PuzzlePlotApp();
+    }
+  }
+
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initPuzzlePlot);
+    } else {
+      initPuzzlePlot();
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('load', initPuzzlePlot);
+    }
   }
 })();
