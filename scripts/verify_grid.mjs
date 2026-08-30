@@ -118,6 +118,6 @@ export function verifyFullPuzzle(puzzle) {
     }
   }
 
-  console.log(`[PASS] ${puzzle.id} (${size}x${size} ${puzzle.language}): ${val.acrossCount} Across, ${val.downCount} Down, 100% valid!`);
+  console.log(`[PASS] ${puzzle.id} (${size}x${size} ${puzzle.language}): ${val.acrossCount} Across, ${val.downCount} Down - grid and clue coverage checks passed.`);
   return val;
 }

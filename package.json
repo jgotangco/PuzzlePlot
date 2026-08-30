@@ -4,7 +4,9 @@
   "description": "PuzzlePlot - Premium Crossword Game & Crossword Puzzle Maker (English & Filipino)",
   "type": "module",
   "scripts": {
-    "test": "node scripts/validate-presets.js",
+    "test": "node scripts/validate-presets.js && node scripts/browser-smoke-test.mjs",
+    "test:unit": "node scripts/validate-presets.js",
+    "test:browser": "node scripts/browser-smoke-test.mjs",
     "validate": "node scripts/validate-presets.js",
     "sync": "node scripts/sync-presets-to-bundle.js"
   },

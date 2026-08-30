@@ -11,7 +11,7 @@
 
 ## 📖 Overview
 
-**PuzzlePlot** is a modern, standalone web application that seamlessly blends a publication-grade **Crossword Puzzle Player** and an interactive **Crossword Maker Studio**. 
+**PuzzlePlot** is a modern, standalone web application that combines an interactive **Crossword Puzzle Player** and a full-featured **Crossword Maker Studio**. 
 
 Built with zero external runtime dependencies, PuzzlePlot works instantly across modern web browsers and local filesystem environments (`file://`), offering procedural Web Audio sound synthesis, 180° rotational symmetry calculations, an automated word-placement engine, and print-ready paper puzzle sheet generation.
 
@@ -20,11 +20,11 @@ Built with zero external runtime dependencies, PuzzlePlot works instantly across
 ## ✨ Features & Highlights
 
 ### 🎮 1. Crossword Player Mode
-- **Multilingual Puzzles**: Play handcrafted crosswords in **English** and **Filipino** (Tagalog).
-- **Multiple Grid Formats**:
-  - **5×5 Mini**: Fast daily word squares.
-  - **13×13 Midi**: Themed standard weekly crosswords (*Crossroad Chronicles*, *Kulturang Pinoy*).
-  - **21×21 Sunday Jumbo**: Epic sprawling crosswords (*Sunday Galaxy Jumbo*, *Kasaysayan at Bayani*).
+- **Multilingual Built-In Library**: Play verified crosswords in **English** and **Filipino** (Tagalog).
+- **Verified Production Presets**:
+  - **5×5 Mini (English)**: *Daily Mini: Hearth & Trend* — A swift 5×5 word square with verified dictionary entries.
+  - **5×5 Mini (Filipino)**: *Munting Palaisipan* — A classic 5×5 word square featuring authentic Filipino vocabulary.
+  - *(Note: 13×13 Midi and 21×21 Jumbo preset puzzles are currently quarantined in `js/data/draft-presets.js` undergoing human vocabulary curation and clue accuracy review before release.)*
 - **Fluid Keyboard & Touch Controls**:
   - <kbd>Arrow Keys</kbd> for smooth cursor movement.
   - <kbd>Spacebar</kbd> / Cell Tap to flip between **Across** and **Down**.
@@ -94,7 +94,8 @@ PuzzlePlot/
     │   ├── crosswordUtils.js   # Grid algorithms, auto-numbering, auto-builder
     │   └── audioManager.js     # Web Audio API sound synthesizer
     ├── data/
-    │   ├── presets.js          # Built-in English & Filipino puzzle presets
+    │   ├── presets.js          # Built-in verified production presets (5x5)
+    │   ├── draft-presets.js    # Quarantined draft presets undergoing review (13x13, 21x21)
     │   └── dictionaries.js     # Multi-language lexicon & pattern search
     ├── player/
     │   └── crosswordPlayer.js  # Interactive crossword player

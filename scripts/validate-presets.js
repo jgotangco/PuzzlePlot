@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { PresetPuzzles } from '../js/data/presets.js';
-import { verifyFullPuzzle } from './verify_grid.mjs';
+import { verifyFullPuzzle, getGridWords } from './verify_grid.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,14 +15,31 @@ console.log('============================================================\n');
 let passCount = 0;
 let failCount = 0;
 
+// Known fabricated strings denylist for release safety
+const FABRICATED_STRINGS_DENYLIST = [
+  'TIBIAEODEABMHOS',
+  'USEAVITHU',
+  'ASOOSYLGE',
+  'NGMHALSUADUNONG',
+  'TARIFFNWAOCAMPO',
+  'WWFABCKNG'
+];
+
+const QUARANTINED_PRESET_IDS = [
+  'en-13-1',
+  'fil-13-1',
+  'en-21-1',
+  'fil-21-1'
+];
+
 // -----------------------------------------------------------------------------
 // 1. Validate Authoritative Modular Presets (js/data/presets.js)
 // -----------------------------------------------------------------------------
-console.log('--- 1. Validating Authoritative Modular Presets (js/data/presets.js) ---');
+console.log('--- 1. Validating Authoritative Production Presets (js/data/presets.js) ---');
 for (const puzzle of PresetPuzzles) {
   try {
     const res = verifyFullPuzzle(puzzle);
-    console.log(`[PASS] ${puzzle.id} (${puzzle.size}x${puzzle.size} ${puzzle.language}): ${res.acrossCount} Across, ${res.downCount} Down - 100% Validated`);
+    console.log(`[PASS] ${puzzle.id} (${puzzle.size}x${puzzle.size} ${puzzle.language}): ${res.acrossCount} Across, ${res.downCount} Down - structurally validated`);
     passCount++;
   } catch (err) {
     console.error(`[FAIL] ${puzzle.id} (${puzzle.size}x${puzzle.size} ${puzzle.language}): ${err.message}`);
@@ -55,7 +72,7 @@ if (bundledPresets) {
   for (const puzzle of bundledPresets) {
     try {
       const res = verifyFullPuzzle(puzzle);
-      console.log(`[PASS] Bundled ${puzzle.id} (${puzzle.size}x${puzzle.size} ${puzzle.language}): ${res.acrossCount} Across, ${res.downCount} Down - 100% Validated`);
+      console.log(`[PASS] Bundled ${puzzle.id} (${puzzle.size}x${puzzle.size} ${puzzle.language}): ${res.acrossCount} Across, ${res.downCount} Down - structurally validated`);
       passCount++;
     } catch (err) {
       console.error(`[FAIL] Bundled ${puzzle.id} (${puzzle.size}x${puzzle.size} ${puzzle.language}): ${err.message}`);
@@ -71,7 +88,7 @@ if (bundledPresets) {
   const bundledStr = JSON.stringify(bundledPresets);
 
   if (modularStr === bundledStr) {
-    console.log('[PASS] Exact byte-for-byte serialization match between modular source and runtime bundle!');
+    console.log('[PASS] Exact serialized-data equality check confirmed between modular source and runtime bundle.');
     passCount++;
   } else {
     console.error('[FAIL] Modular presets (js/data/presets.js) and bundled presets (js/puzzleplot.bundle.js) diverge!');
@@ -85,9 +102,79 @@ if (bundledPresets) {
 }
 
 // -----------------------------------------------------------------------------
-// 4. Runtime Browser DOM & Player Engine Simulation
+// 4. Safety Denylist & Quarantine Check
 // -----------------------------------------------------------------------------
-console.log('\n--- 4. In-Browser Runtime Execution & Completion Verification ---');
+console.log('\n--- 4. Verifying Safety Denylist & Quarantine Integrity ---');
+
+let denylistPassed = true;
+const allProdPuzzles = [...PresetPuzzles, ...(bundledPresets || [])];
+
+for (const puzzle of allProdPuzzles) {
+  const val = getGridWords(puzzle.grid);
+  const allWords = [...val.acrossWords, ...val.downWords].map(w => w.letters.toUpperCase());
+
+  for (const denied of FABRICATED_STRINGS_DENYLIST) {
+    if (allWords.includes(denied)) {
+      console.error(`[FAIL] Fabricated string "${denied}" detected in production preset "${puzzle.id}"!`);
+      denylistPassed = false;
+      failCount++;
+    }
+  }
+}
+
+for (const denied of FABRICATED_STRINGS_DENYLIST) {
+  if (bundleContent.includes(denied)) {
+    console.error(`[FAIL] Fabricated string "${denied}" detected in js/puzzleplot.bundle.js!`);
+    denylistPassed = false;
+    failCount++;
+  }
+}
+
+if (denylistPassed) {
+  console.log('[PASS] Safety denylist passed: 0 known fabricated strings found in production presets or bundle.');
+  passCount++;
+}
+
+let quarantineIdCheck = true;
+for (const qId of QUARANTINED_PRESET_IDS) {
+  if (PresetPuzzles.some(p => p.id === qId)) {
+    console.error(`[FAIL] Quarantined preset ID "${qId}" found in js/data/presets.js!`);
+    quarantineIdCheck = false;
+    failCount++;
+  }
+  if (bundledPresets && bundledPresets.some(p => p.id === qId)) {
+    console.error(`[FAIL] Quarantined preset ID "${qId}" found in js/puzzleplot.bundle.js!`);
+    quarantineIdCheck = false;
+    failCount++;
+  }
+}
+
+if (quarantineIdCheck) {
+  console.log('[PASS] Quarantined preset IDs (en-13-1, fil-13-1, en-21-1, fil-21-1) are successfully excluded from production.');
+  passCount++;
+}
+
+const draftPath = path.join(rootDir, 'js', 'data', 'draft-presets.js');
+try {
+  if (!fs.existsSync(draftPath)) {
+    throw new Error('js/data/draft-presets.js not found.');
+  }
+  const draftContent = fs.readFileSync(draftPath, 'utf8');
+  const hasDisclaimer = draftContent.includes('EXCLUDED from the production Puzzle Library');
+  if (!hasDisclaimer) {
+    throw new Error('js/data/draft-presets.js is missing the prominent exclusion/review disclaimer.');
+  }
+  console.log('[PASS] Draft presets file (js/data/draft-presets.js) exists with prominent quarantine notice.');
+  passCount++;
+} catch (err) {
+  console.error(`[FAIL] Draft presets file check failed: ${err.message}`);
+  failCount++;
+}
+
+// -----------------------------------------------------------------------------
+// 5. Runtime Browser DOM & Player Engine Simulation
+// -----------------------------------------------------------------------------
+console.log('\n--- 5. In-Browser Runtime Execution & Completion Verification ---');
 
 const elements = new Map();
 function createMockElement(id = '', tag = 'div') {
@@ -137,8 +224,6 @@ function getOrCreateElement(id) {
 }
 
 const windowListeners = {};
-const runtimeErrors = [];
-const runtimeWarnings = [];
 
 global.window = {
   scrollTo: () => {},
@@ -193,8 +278,6 @@ global.document = {
 };
 
 global.localStorage = global.window.localStorage;
-const origError = console.error;
-const origWarn = console.warn;
 
 eval(bundleContent);
 
@@ -239,7 +322,7 @@ if (app && bundledPresets) {
         throw new Error(`Victory completion check failed for ${preset.id}`);
       }
 
-      console.log(`[PASS] Runtime simulation of ${preset.id} (${preset.title}): Navigation, Clues, & Victory 100% OK`);
+      console.log(`[PASS] Runtime simulation of ${preset.id} (${preset.title}): Navigation, Clues, & Victory passed.`);
       passCount++;
     } catch (err) {
       console.error(`[FAIL] Runtime simulation of ${preset.id}: ${err.message}`);
@@ -256,6 +339,6 @@ if (failCount > 0) {
   console.error('Validation failed! Exiting with code 1.');
   process.exit(1);
 } else {
-  console.log('All modular & runtime bundle presets 100% verified, synchronized, and executable! Exiting with code 0.');
+  console.log('All modular & runtime bundle presets structurally validated, synchronized, and executable! Exiting with code 0.');
   process.exit(0);
 }
