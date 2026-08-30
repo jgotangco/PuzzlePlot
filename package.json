@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "node scripts/validate-presets.js",
-    "validate": "node scripts/validate-presets.js"
+    "validate": "node scripts/validate-presets.js",
+    "sync": "node scripts/sync-presets-to-bundle.js"
   },
   "keywords": [
     "crossword",
