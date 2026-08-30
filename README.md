@@ -83,7 +83,7 @@ Then navigate to `http://localhost:8000` in your web browser.
 ```
 PuzzlePlot/
 ├── index.html                  # Main application entry point & modals
-├── README.md                   # Project overview, guides & disclaimers
+├── README.md                   # Project overview, guides & specifications
 ├── LICENSE                     # MIT License
 ├── css/
 │   └── style.css               # Editorial CSS design system & print styles
@@ -105,14 +105,9 @@ PuzzlePlot/
 
 ---
 
-## 📜 Attributions, Credits & Disclaimers
+## 📜 Attributions & Credits
 
-### Attributions & Credits
-Designed and product-directed by **[Jerome Gotangco](https://github.com/jgotangco)** ([jeromesg@google.com](mailto:jeromesg@google.com) | GitHub: [https://github.com/jgotangco](https://github.com/jgotangco)). Developed with [Google Antigravity](https://antigravity.google/) / [Gemini](https://gemini.google.com/).
-
-### Disclaimers
-1. **Affiliation Disclaimer**: This application is a personal work of the author and is **not associated with, endorsed by, or affiliated with [Google](https://about.google/), his past, present, and future employers, or any other party**.
-2. **Use & Warranty Disclaimer**: This application is for **demonstration and personal use only**. **No warranties or guarantees of any kind, express or implied, are provided regarding financial accuracy, continuous availability, or fitness for any purpose.**
+Designed and product-directed by [Jerome Gotangco](https://github.com/jgotangco). Developed with [Google Antigravity](https://antigravity.google/) / Gemini.
 
 ---
 
