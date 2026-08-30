@@ -11,6 +11,14 @@ import { CrosswordPlayer } from '../js/player/crosswordPlayer.js';
 import { CrosswordMaker } from '../js/maker/crosswordMaker.js';
 import { PuzzlePlotApp } from '../js/app.js';
 import { generateBundleContent } from './build-bundle.js';
+import {
+  validateSemver,
+  checkReadmeContent,
+  checkIndexHtmlContent,
+  checkAppJsContent,
+  checkBundleJsContent,
+  checkNoStaleVersionReferences
+} from './check-version.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -392,6 +400,49 @@ assert(confirmPrompted === false, 'clearEntireGrid(true) does NOT prompt window.
 assert(playAgainResult === true, 'clearEntireGrid(true) returns true');
 assert(testPlayerInstance.userGrid[0][0].value === '', 'User grid cleared for Play Again');
 
+// -----------------------------------------------------------------------------
+// 10. Version Consistency & Mismatch Detection (v1.1.0)
+// -----------------------------------------------------------------------------
+console.log('\n--- 10. Testing Version Consistency & Mismatch Detection ---');
+
+// Semantic Version Validation
+assert(validateSemver('1.1.0') === true, 'validateSemver accepts valid standard semver "1.1.0"');
+assert(validateSemver('1.0.0-rc.1') === true, 'validateSemver accepts valid pre-release semver "1.0.0-rc.1"');
+assert(validateSemver('v1.1.0') === false, 'validateSemver rejects semver with "v" prefix');
+assert(validateSemver('invalid.ver') === false, 'validateSemver rejects non-numeric version string');
+assert(validateSemver(null) === false, 'validateSemver rejects null');
+assert(validateSemver('') === false, 'validateSemver rejects empty string');
+
+// README Version Mismatch Detection
+const validReadme = '> **(v1.1.0)** [![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](url)';
+const staleSubtitleReadme = '> **(v1.0.0)** [![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](url)';
+const staleBadgeReadme = '> **(v1.1.0)** [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](url)';
+assert(checkReadmeContent(validReadme, '1.1.0').length === 0, 'checkReadmeContent passes synchronized README');
+assert(checkReadmeContent(staleSubtitleReadme, '1.1.0').length > 0, 'checkReadmeContent detects stale README subtitle');
+assert(checkReadmeContent(staleBadgeReadme, '1.1.0').length > 0, 'checkReadmeContent detects stale README badge');
+
+// index.html Version Mismatch Detection
+const validHtml = '<title>PuzzlePlot - Crossword Puzzle Game & Maker (v1.1.0)</title><span class="about-version-tag">Version 1.1.0</span>';
+const staleTitleHtml = '<title>PuzzlePlot - Crossword Puzzle Game & Maker (v1.0.0)</title><span class="about-version-tag">Version 1.1.0</span>';
+const staleTagHtml = '<title>PuzzlePlot - Crossword Puzzle Game & Maker (v1.1.0)</title><span class="about-version-tag">Version 1.0.0</span>';
+assert(checkIndexHtmlContent(validHtml, '1.1.0').length === 0, 'checkIndexHtmlContent passes synchronized index.html');
+assert(checkIndexHtmlContent(staleTitleHtml, '1.1.0').length > 0, 'checkIndexHtmlContent detects stale HTML title');
+assert(checkIndexHtmlContent(staleTagHtml, '1.1.0').length > 0, 'checkIndexHtmlContent detects stale About modal version tag');
+
+// App & Bundle Footer Mismatch Detection
+const validFooter = '<p><strong>PuzzlePlot</strong> — Crossword Puzzle Game & Maker Studio (v1.1.0)</p>';
+const staleFooter = '<p><strong>PuzzlePlot</strong> — Crossword Puzzle Game & Maker Studio (v1.0.0)</p>';
+assert(checkAppJsContent(validFooter, '1.1.0').length === 0, 'checkAppJsContent passes synchronized js/app.js');
+assert(checkAppJsContent(staleFooter, '1.1.0').length > 0, 'checkAppJsContent detects stale js/app.js footer');
+assert(checkBundleJsContent(validFooter, '1.1.0').length === 0, 'checkBundleJsContent passes synchronized js/puzzleplot.bundle.js');
+assert(checkBundleJsContent(staleFooter, '1.1.0').length > 0, 'checkBundleJsContent detects stale js/puzzleplot.bundle.js footer');
+
+// Stale Reference Scanner Detection
+assert(checkNoStaleVersionReferences({ 'clean.txt': 'Version 1.1.0 (v1.1.0)' }, '1.1.0', ['1.0.0']).length === 0, 'checkNoStaleVersionReferences passes clean content');
+assert(checkNoStaleVersionReferences({ 'stale-badge.txt': 'badge/version-1.0.0-blue.svg' }, '1.1.0', ['1.0.0']).length > 0, 'checkNoStaleVersionReferences detects stale badge');
+assert(checkNoStaleVersionReferences({ 'stale-display.txt': 'PuzzlePlot (v1.0.0)' }, '1.1.0', ['1.0.0']).length > 0, 'checkNoStaleVersionReferences detects stale display text');
+assert(checkNoStaleVersionReferences({ 'stale-tag.txt': '<span class="about-version-tag">Version 1.0.0</span>' }, '1.1.0', ['1.0.0']).length > 0, 'checkNoStaleVersionReferences detects stale tag');
+
 console.log('\n------------------------------------------------------------');
 console.log(`Summary: ${passCount} Checks Passed, ${failCount} Failed`);
 console.log('------------------------------------------------------------\n');
@@ -399,6 +450,6 @@ console.log('------------------------------------------------------------\n');
 if (failCount > 0) {
   process.exit(1);
 } else {
-  console.log('All P1 architecture, integrity, and data-safety tests passed with 100% success!');
+  console.log('All P1/P2 architecture, integrity, and data-safety tests passed with 100% success!');
   process.exit(0);
 }

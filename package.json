@@ -1,17 +1,18 @@
 {
   "name": "puzzleplot",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "PuzzlePlot - Premium Crossword Game & Crossword Puzzle Maker (English & Filipino)",
   "type": "module",
   "scripts": {
     "build": "node scripts/build-bundle.js",
     "check:bundle": "node scripts/check-bundle-consistency.js",
+    "check:version": "node scripts/check-version.js",
     "sync": "node scripts/sync-presets-to-bundle.js",
-    "test:deterministic": "node scripts/test-p1-integrity.js && node scripts/validate-presets.js",
+    "test:deterministic": "node scripts/check-version.js && node scripts/check-bundle-consistency.js && node scripts/test-p1-integrity.js && node scripts/validate-presets.js",
     "test:unit": "node scripts/test-p1-integrity.js",
     "test:presets": "node scripts/validate-presets.js",
     "test:browser": "node scripts/browser-smoke-test.mjs",
-    "test": "node scripts/test-p1-integrity.js && node scripts/validate-presets.js && node scripts/browser-smoke-test.mjs"
+    "test": "node scripts/check-version.js && node scripts/check-bundle-consistency.js && node scripts/test-p1-integrity.js && node scripts/validate-presets.js && node scripts/browser-smoke-test.mjs"
   },
   "keywords": [
     "crossword",

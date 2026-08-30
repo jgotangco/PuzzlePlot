@@ -379,7 +379,7 @@ class PuzzlePlotApp {
       <footer class="app-footer">
         <div class="footer-inner">
           <div class="footer-left">
-            <p><strong>PuzzlePlot</strong> — Crossword Puzzle Game & Maker Studio (v1.0.0)</p>
+            <p><strong>PuzzlePlot</strong> — Crossword Puzzle Game & Maker Studio (v1.1.0)</p>
             <p class="footer-byline">Designed and product-directed by <a href="https://github.com/jgotangco" target="_blank" rel="noopener noreferrer" class="about-link">Jerome Gotangco</a> (<a href="mailto:jeromesg@google.com" class="about-link">jeromesg@google.com</a>). Developed with <a href="https://antigravity.google/" target="_blank" rel="noopener noreferrer" class="about-link">Google Antigravity</a> / <a href="https://gemini.google.com/" target="_blank" rel="noopener noreferrer" class="about-link">Gemini</a>.</p>
           </div>
           <div class="footer-links">

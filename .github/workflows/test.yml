@@ -24,6 +24,9 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
+      - name: Verify Repository-Wide Version Consistency
+        run: node scripts/check-version.js
+
       - name: Verify Bundle Synchronization & Consistency
         run: node scripts/check-bundle-consistency.js
 
